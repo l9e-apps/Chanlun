@@ -1,0 +1,1820 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © Chanlun Pro V7.14 - 修复：笔连接 + 线段/走势段特征序列法 + 编码 + 性能
+// 整合 Chanlun Integrated 的严格算法
+
+//@version=6
+indicator("缠论 Pro V7.14", overlay=true, max_lines_count=500, max_labels_count=500, max_boxes_count=500, max_bars_back=5000)
+
+// ============ 1. 输入参数 ============
+group_master = "【总开关】"
+showMaster = input.bool(true, "显示总开关", group=group_master)
+
+group_zsd = "【本级别-走势段】"
+showZsd = input.bool(true, "显示:走势段线", group=group_zsd)
+showZsZsd = input.bool(true, "显示:本级别中枢", group=group_zsd)
+showBspZsd = input.bool(true, "显示:本级别买卖点", group=group_zsd)
+showBcZsd = input.bool(true, "显示:本级别背驰/背离", group=group_zsd)
+zsdColor = input.color(color.orange, "走势段颜色", group=group_zsd)
+zsColorZsd = input.color(color.new(color.orange, 80), "本级别中枢颜色", group=group_zsd)
+
+group_xd = "【次级别-线段】"
+showXd = input.bool(true, "显示:线段线", group=group_xd)
+showZsXd = input.bool(true, "显示:次级别中枢", group=group_xd)
+showBspXd = input.bool(true, "显示:次级别买卖点", group=group_xd)
+showBcXd = input.bool(true, "显示:次级别背驰/背离", group=group_xd)
+xdColor = input.color(color.yellow, "线段颜色", group=group_xd)
+zsColorXd = input.color(color.new(color.purple, 80), "次级别中枢颜色", group=group_xd)
+
+group_bi = "【笔级别】"
+showBi = input.bool(true, "显示:笔线", group=group_bi)
+showZsBi = input.bool(true, "显示:笔级别中枢", group=group_bi)
+showBspBi = input.bool(true, "显示:笔级别买卖点", group=group_bi)
+showBcBi = input.bool(true, "显示:笔级别背驰/背离", group=group_bi)
+upBiColor = input.color(color.lime, "向上笔颜色", group=group_bi)
+downBiColor = input.color(color.red, "向下笔颜色", group=group_bi)
+zsColorBi = input.color(color.new(color.blue, 80), "笔级别中枢颜色", group=group_bi)
+
+group_other = "【其他显示】"
+showMerged = input.bool(false, "显示:合并K线", group=group_other)
+showFractal = input.bool(false, "显示:顶底分型", group=group_other)
+showZhongshu = input.bool(true, "显示:中枢(总开关)", group=group_other)
+topColor = input.color(color.red, "顶分型颜色", group=group_other)
+bottomColor = input.color(color.green, "底分型颜色", group=group_other)
+
+group_bsp = "【买卖点类型】"
+showBSP = input.bool(true, "显示:买卖点(总开关)", group=group_bsp)
+showBSP1 = input.bool(true, "显示:一类买卖点", group=group_bsp)
+showBSP2 = input.bool(true, "显示:二类买卖点", group=group_bsp)
+showBSP3 = input.bool(true, "显示:三类买卖点", group=group_bsp)
+
+// ===== 买卖点颜色设置(新增) =====
+group_bsp_color = "【买卖点颜色】"
+bspBuyColor = input.color(color.teal, "买点文字颜色", group=group_bsp_color)
+bspSellColor = input.color(color.maroon, "卖点文字颜色", group=group_bsp_color)
+potentialBuyTextColor = input.color(color.green, "潜在买点文字颜色", group=group_bsp_color)
+potentialSellTextColor = input.color(color.red, "潜在卖点文字颜色", group=group_bsp_color)
+
+// ===== 止损设置(新增) =====
+group_stoploss = "【止损设置】"
+xdStopLossPct = input.float(1.0, "次级别止损%", minval=0.5, maxval=5.0, step=0.1, group=group_stoploss, tooltip="次级别买卖点离开极值点的止损百分比")
+zsdStopLossPct = input.float(1.5, "本级别止损%", minval=0.5, maxval=5.0, step=0.1, group=group_stoploss, tooltip="本级别买卖点离开极值点的止损百分比")
+biStopLossPct = input.float(0.5, "笔级别止损%", minval=0.1, maxval=3.0, step=0.1, group=group_stoploss, tooltip="笔级别买卖点离开极值点的止损百分比")
+
+group_bc = "【背驰设置】"
+showBC = input.bool(true, "显示:背驰/背离(总开关)", group=group_bc)
+bcThreshold = input.float(0.9, "背驰阈值", minval=0.1, maxval=1.0, step=0.05, group=group_bc)
+
+group_realtime = "【实时预判】"
+showPendingBi = input.bool(true, "显示:未完成笔", group=group_realtime)
+showPendingXd = input.bool(true, "显示:未完成线段", group=group_realtime)
+showPendingZsd = input.bool(true, "显示:未完成走势段", group=group_realtime)
+showPotentialBSP = input.bool(true, "显示:潜在买卖点", group=group_realtime)
+showRealtimeBC = input.bool(true, "显示:实时背驰预警", group=group_realtime)
+showPendingStrength = input.bool(true, "显示:力度标签", group=group_realtime)
+pendingBiColor = input.color(color.new(color.gray, 30), "未完成笔颜色", group=group_realtime)
+pendingXdColor = input.color(color.new(color.yellow, 50), "未完成线段颜色", group=group_realtime)
+pendingZsdColor = input.color(color.new(color.orange, 50), "未完成走势段颜色", group=group_realtime)
+potentialBuyColor = input.color(color.new(color.teal, 30), "潜在买点颜色", group=group_realtime)
+potentialSellColor = input.color(color.new(color.maroon, 30), "潜在卖点颜色", group=group_realtime)
+
+group_alert = "【警报设置】"
+alertZsdBSP = input.bool(true, "本级别:买卖点警报", group=group_alert)
+alertZsdPotential = input.bool(true, "本级别:潜在买卖点警报", group=group_alert)
+alertZsdBC = input.bool(true, "本级别:背驰警报", group=group_alert)
+alertXdBSP = input.bool(true, "次级别:买卖点警报", group=group_alert)
+alertXdPotential = input.bool(true, "次级别:潜在买卖点警报", group=group_alert)
+alertXdBC = input.bool(true, "次级别:背驰警报", group=group_alert)
+alertBiBSP = input.bool(false, "笔级别:买卖点警报", group=group_alert)
+alertBiPotential = input.bool(false, "笔级别:潜在买卖点警报", group=group_alert)
+alertBiBC = input.bool(false, "笔级别:背驰警报", group=group_alert)
+alertBCThreshold = input.float(50.0, "背驰强度阈值%", minval=20, maxval=90, step=5, group=group_alert)
+alertPotentialThreshold = input.float(60.0, "潜在买卖点强度阈值%", minval=30, maxval=90, step=5, group=group_alert)
+
+group_bi_param = "【笔参数】"
+biType = input.string("新笔", "笔的类型", options=["老笔", "新笔", "简单笔", "顶底成笔"], group=group_bi_param)
+fxStrict = input.bool(false, "分型严格处理", group=group_bi_param)
+biBzh = input.bool(false, "笔标准化", group=group_bi_param)
+biCgd = input.bool(true, "允许次高低成笔", group=group_bi_param)
+biJiSu = input.bool(false, "急速成笔", group=group_bi_param)
+biJiSuMulti = input.float(2.0, "急速倍数", minval=1.5, maxval=5.0, step=0.5, group=group_bi_param)
+biJiSuLookback = input.int(10, "急速参考周期", minval=5, maxval=30, group=group_bi_param)
+
+group_xd_param = "【线段参数】"
+xdMode = input.string("严格模式", "线段划分模式", options=["延伸模式", "严格模式", "1+1终结"], group=group_xd_param)
+xd9Bi = input.bool(true, "9笔升级", group=group_xd_param)
+
+// ============ 2. 数据结构 ============
+type MergedKline
+    int idx
+    int startBar
+    int endBar
+    float h
+    float l
+    float absH
+    float absL
+    int dir
+
+type Fractal
+    int mIdx
+    float price
+    bool isTop
+    int barIndex
+    float floor
+    float ceiling
+
+type Bi
+    int startIdx
+    int endIdx
+    float startPrice
+    float endPrice
+    bool isUp
+    int startMIdx
+    int endMIdx
+
+type Segment
+    int startIdx
+    int endIdx
+    float startPrice
+    float endPrice
+    bool isUp
+    int startElemIdx
+    int endElemIdx
+
+type Zhongshu
+    int startIdx
+    int endIdx
+    float zg
+    float zd
+    float gg
+    float dd
+    int enterIdx
+    int exitIdx
+    color col
+
+type BuySellPoint
+    int barIdx
+    float price
+    int bspType
+    bool isBuy
+    string level
+
+type Beichi
+    int barIdx
+    float price
+    bool isBuy
+    string level
+    string bcType
+    float strength
+
+type PotentialBSP
+    int barIdx
+    float price
+    bool isBuy
+    string reason
+    string level
+    float strength
+
+// ============ 3. K线合并(严格版 - 来自Chanlun Integrated) ============
+var MergedKline[] mks = array.new<MergedKline>()
+
+if barstate.isfirst
+    array.clear(mks)
+
+if bar_index >= last_bar_index - 5000
+    mkSize = array.size(mks)
+    
+    if mkSize == 0
+        array.push(mks, MergedKline.new(0, bar_index, bar_index, high, low, high, low, 1))
+    else
+        prev = array.get(mks, mkSize - 1)
+        
+        // 包含关系判断(保持不变)
+        bool hasInclusion = (high <= prev.h and low >= prev.l) or (high >= prev.h and low <= prev.l)
+        
+        if hasInclusion
+            // 合并处理(保持不变)
+            float newH = 0.0
+            float newL = 0.0
+            if prev.dir == 1
+                newH := math.max(high, prev.h)
+                newL := math.max(low, prev.l)
+            else
+                newH := math.min(high, prev.h)
+                newL := math.min(low, prev.l)
+            prev.endBar := bar_index
+            prev.h := newH
+            prev.l := newL
+            prev.absH := math.max(prev.absH, high)
+            prev.absL := math.min(prev.absL, low)
+        else
+            // 【改进】严格方向判断 - 来自 Chanlun Integrated
+            // 必须同时满足高点和低点的方向性
+            int newDir = 0
+            if high > prev.h and low > prev.l
+                // 严格向上:高点更高 且 低点更高
+                newDir := 1
+            else if high < prev.h and low < prev.l
+                // 严格向下:高点更低 且 低点更低
+                newDir := -1
+            else
+                // 边界情况(如跳空):沿用前一方向
+                newDir := prev.dir
+                
+            int newIdx = mkSize
+            array.push(mks, MergedKline.new(newIdx, bar_index, bar_index, high, low, high, low, newDir))
+
+// ============ 4. 分型识别(严格版 - 来自Chanlun Integrated) ============
+var Fractal[] fxs = array.new<Fractal>()
+
+if barstate.islast
+    array.clear(fxs)
+    mkSize = array.size(mks)
+    
+    if mkSize >= 3
+        for i = 1 to mkSize - 2
+            prev = array.get(mks, i - 1)
+            curr = array.get(mks, i)
+            next = array.get(mks, i + 1)
+            
+            // 【改进】严格分型识别 - 来自 Chanlun Integrated
+            // 顶分型:中间K线高点最高,且低点不能低于两边(可以相等)
+            // 这比原来的 "低点必须更高" 更符合经典缠论定义
+            bool isTop = curr.h > prev.h and curr.h > next.h and curr.l >= prev.l and curr.l >= next.l
+            
+            // 底分型:中间K线低点最低,且高点不能高于两边(可以相等)
+            bool isBot = curr.l < prev.l and curr.l < next.l and curr.h <= prev.h and curr.h <= next.h
+            
+            if isTop
+                // 顶分型
+                float floorPrice = math.min(prev.l, curr.l, next.l)
+                float ceilingPrice = curr.h
+                array.push(fxs, Fractal.new(i, curr.h, true, curr.endBar, floorPrice, ceilingPrice))
+            else if isBot
+                // 底分型
+                float floorPrice = curr.l
+                float ceilingPrice = math.max(prev.h, curr.h, next.h)
+                array.push(fxs, Fractal.new(i, curr.l, false, curr.endBar, floorPrice, ceilingPrice))
+
+// ============ 5. 笔识别 ============
+var Bi[] bis = array.new<Bi>()
+atrValue = ta.atr(biJiSuLookback)
+
+if barstate.islast
+    array.clear(bis)
+    fxSize = array.size(fxs)
+    
+    if fxSize >= 2
+        Fractal currFx = array.get(fxs, 0)
+        
+        for i = 1 to fxSize - 1
+            Fractal nextFx = array.get(fxs, i)
+            
+            if nextFx.isTop != currFx.isTop
+                int mIdxDiff = math.abs(nextFx.mIdx - currFx.mIdx)
+                int barDiff = math.abs(nextFx.barIndex - currFx.barIndex)
+                
+                bool lengthOK = false
+                if biType == "老笔"
+                    lengthOK := mIdxDiff >= 4
+                else if biType == "新笔"
+                    lengthOK := mIdxDiff >= 3
+                else if biType == "简单笔"
+                    lengthOK := barDiff >= 3
+                else
+                    lengthOK := mIdxDiff >= 1
+                
+                bool jiSuOK = false
+                if biJiSu and not lengthOK and mIdxDiff >= 1
+                    float priceRange = math.abs(nextFx.price - currFx.price)
+                    if priceRange > atrValue * biJiSuMulti
+                        jiSuOK := true
+                
+                if jiSuOK
+                    lengthOK := true
+                
+                bool fxStrictOK = true
+                if fxStrict and lengthOK
+                    if currFx.isTop
+                        if currFx.floor < nextFx.floor
+                            fxStrictOK := false
+                    else
+                        if currFx.ceiling > nextFx.ceiling
+                            fxStrictOK := false
+                
+                bool standardOK = true
+                if biBzh and lengthOK
+                    if currFx.isTop
+                        standardOK := currFx.price > nextFx.price
+                    else
+                        standardOK := currFx.ceiling <= nextFx.floor
+                
+                if biCgd and not standardOK and mIdxDiff >= 2
+                    standardOK := true
+                
+                if lengthOK and standardOK and fxStrictOK
+                    bool isUpBi = not currFx.isTop
+                    array.push(bis, Bi.new(currFx.barIndex, nextFx.barIndex, currFx.price, nextFx.price, isUpBi, currFx.mIdx, nextFx.mIdx))
+                    currFx := nextFx
+            else
+                // 同性质分型：取极值，并同步更新上一笔的终点以保持连接
+                if currFx.isTop
+                    if nextFx.price > currFx.price
+                        if array.size(bis) > 0
+                            Bi lastBi = array.get(bis, array.size(bis) - 1)
+                            if lastBi.endIdx == currFx.barIndex
+                                lastBi.endIdx := nextFx.barIndex
+                                lastBi.endPrice := nextFx.price
+                                lastBi.endMIdx := nextFx.mIdx
+                        currFx := nextFx
+                else
+                    if nextFx.price < currFx.price
+                        if array.size(bis) > 0
+                            Bi lastBi = array.get(bis, array.size(bis) - 1)
+                            if lastBi.endIdx == currFx.barIndex
+                                lastBi.endIdx := nextFx.barIndex
+                                lastBi.endPrice := nextFx.price
+                                lastBi.endMIdx := nextFx.mIdx
+                        currFx := nextFx
+
+// ============ 5.1 未完成笔计算 ============
+var Bi pendingBi = na
+var float pendingBiStrength = 0.0
+
+if barstate.islast and showPendingBi
+    if array.size(fxs) > 0 and array.size(bis) > 0
+        Bi lastBi = array.get(bis, array.size(bis) - 1)
+        Fractal lastConfirmedFx = na
+        
+        for fx in fxs
+            if fx.barIndex == lastBi.endIdx
+                lastConfirmedFx := fx
+                break
+        
+        if not na(lastConfirmedFx)
+            float pendingEndPrice = lastBi.isUp ? low : high
+            int pendingEndBar = bar_index
+            
+            for i = lastBi.endIdx to bar_index
+                int offset = bar_index - i
+                if offset >= 0
+                    if lastBi.isUp
+                        if low[offset] < pendingEndPrice
+                            pendingEndPrice := low[offset]
+                            pendingEndBar := i
+                    else
+                        if high[offset] > pendingEndPrice
+                            pendingEndPrice := high[offset]
+                            pendingEndBar := i
+            
+            pendingBi := Bi.new(lastBi.endIdx, pendingEndBar, lastBi.endPrice, pendingEndPrice, not lastBi.isUp, 0, 0)
+            
+            float lastBiRange = math.abs(lastBi.endPrice - lastBi.startPrice)
+            float pendingRange = math.abs(pendingEndPrice - lastBi.endPrice)
+            if lastBiRange > 0
+                pendingBiStrength := pendingRange / lastBiRange * 100
+
+// ============ 6. 线段识别（特征序列法） ============
+var Segment[] xds = array.new<Segment>()
+
+if barstate.islast
+    array.clear(xds)
+    biSize = array.size(bis)
+    
+    if biSize >= 3
+        Bi firstBi = array.get(bis, 0)
+        bool xdIsUp = firstBi.isUp
+        int xdStartBar = firstBi.startIdx
+        float xdStartPrice = firstBi.startPrice
+        
+        // 只跟踪线段方向的极值点
+        float xdExtreme = firstBi.endPrice
+        int xdExtremeBar = firstBi.endIdx
+        int xdExtremeIdx = 0  // 极值点在bis数组中的索引
+        
+        // 特征序列：跟踪上一个反方向笔的关键价格
+        // 向上线段的特征序列 = 向下笔序列，跟踪其high（startPrice）
+        // 向下线段的特征序列 = 向上笔序列，跟踪其low（startPrice）
+        float prevCharHigh = na
+        float prevCharLow = na
+        int biCount = 1
+        
+        for i = 1 to biSize - 1
+            Bi currBi = array.get(bis, i)
+            biCount += 1
+            
+            // 只为线段方向的笔更新极值
+            if xdIsUp and currBi.isUp
+                if currBi.endPrice > xdExtreme
+                    xdExtreme := currBi.endPrice
+                    xdExtremeBar := currBi.endIdx
+                    xdExtremeIdx := i
+            else if not xdIsUp and not currBi.isUp
+                if currBi.endPrice < xdExtreme
+                    xdExtreme := currBi.endPrice
+                    xdExtremeBar := currBi.endIdx
+                    xdExtremeIdx := i
+            
+            bool xdEnded = false
+            
+            // 9笔强制升级
+            if xd9Bi and biCount >= 9
+                xdEnded := true
+            
+            // 特征序列检查（至少3笔）
+            if not xdEnded and biCount >= 3
+                if xdIsUp and not currBi.isUp
+                    // 向上线段：向下笔是特征序列元素
+                    // 特征序列元素的high = 向下笔的起点（较高点）
+                    float charHigh = currBi.startPrice
+                    if not na(prevCharHigh) and charHigh < prevCharHigh
+                        // 特征序列出现更低的high → 线段结束
+                        xdEnded := true
+                    prevCharHigh := charHigh
+                
+                else if not xdIsUp and currBi.isUp
+                    // 向下线段：向上笔是特征序列元素
+                    // 特征序列元素的low = 向上笔的起点（较低点）
+                    float charLow = currBi.startPrice
+                    if not na(prevCharLow) and charLow > prevCharLow
+                        // 特征序列出现更高的low → 线段结束
+                        xdEnded := true
+                    prevCharLow := charLow
+            
+            if xdEnded
+                // 线段终点 = 方向极值点
+                array.push(xds, Segment.new(xdStartBar, xdExtremeBar, xdStartPrice, xdExtreme, xdIsUp, 0, 0))
+                
+                // 保存旧极值索引用于重扫描
+                int rescanFrom = xdExtremeIdx
+                
+                // 新线段从极值点开始
+                xdStartBar := xdExtremeBar
+                xdStartPrice := xdExtreme
+                xdIsUp := not xdIsUp
+                
+                // 重置
+                xdExtreme := xdIsUp ? -1e10 : 1e10
+                xdExtremeBar := xdStartBar
+                xdExtremeIdx := rescanFrom
+                prevCharHigh := na
+                prevCharLow := na
+                biCount := 0
+                
+                // 重新处理从极值点之后到当前笔的所有笔（补回新线段的状态）
+                for j = rescanFrom + 1 to i
+                    if j < biSize
+                        Bi reBi = array.get(bis, j)
+                        biCount += 1
+                        // 更新新线段的极值
+                        if xdIsUp and reBi.isUp and reBi.endPrice > xdExtreme
+                            xdExtreme := reBi.endPrice
+                            xdExtremeBar := reBi.endIdx
+                            xdExtremeIdx := j
+                        else if not xdIsUp and not reBi.isUp and reBi.endPrice < xdExtreme
+                            xdExtreme := reBi.endPrice
+                            xdExtremeBar := reBi.endIdx
+                            xdExtremeIdx := j
+                        // 更新新线段的特征序列状态
+                        if xdIsUp and not reBi.isUp
+                            prevCharHigh := reBi.startPrice
+                        else if not xdIsUp and reBi.isUp
+                            prevCharLow := reBi.startPrice
+        
+        // 最后未完成的线段
+        if biCount >= 2
+            array.push(xds, Segment.new(xdStartBar, xdExtremeBar, xdStartPrice, xdExtreme, xdIsUp, 0, 0))
+
+// ============ 6.1 未完成线段计算 ============
+var Segment pendingXd = na
+var float pendingXdStrength = 0.0
+
+if barstate.islast and showPendingXd and array.size(xds) > 0
+    Segment lastXd = array.get(xds, array.size(xds) - 1)
+    
+    float pendingXdEndPrice = lastXd.endPrice
+    int pendingXdEndBar = lastXd.endIdx
+    
+    if array.size(bis) > 0
+        for bi in bis
+            if bi.startIdx >= lastXd.endIdx
+                if lastXd.isUp
+                    if bi.endPrice < pendingXdEndPrice
+                        pendingXdEndPrice := bi.endPrice
+                        pendingXdEndBar := bi.endIdx
+                else
+                    if bi.endPrice > pendingXdEndPrice
+                        pendingXdEndPrice := bi.endPrice
+                        pendingXdEndBar := bi.endIdx
+    
+    if not na(pendingBi)
+        if lastXd.isUp
+            if pendingBi.endPrice < pendingXdEndPrice
+                pendingXdEndPrice := pendingBi.endPrice
+                pendingXdEndBar := pendingBi.endIdx
+        else
+            if pendingBi.endPrice > pendingXdEndPrice
+                pendingXdEndPrice := pendingBi.endPrice
+                pendingXdEndBar := pendingBi.endIdx
+    
+    if pendingXdEndBar > lastXd.endIdx
+        pendingXd := Segment.new(lastXd.endIdx, pendingXdEndBar, lastXd.endPrice, pendingXdEndPrice, not lastXd.isUp, 0, 0)
+        float lastXdRange = math.abs(lastXd.endPrice - lastXd.startPrice)
+        float pendingXdRange = math.abs(pendingXdEndPrice - lastXd.endPrice)
+        if lastXdRange > 0
+            pendingXdStrength := pendingXdRange / lastXdRange * 100
+
+// ============ 7. 走势段识别（特征序列法） ============
+var Segment[] zsds = array.new<Segment>()
+
+if barstate.islast
+    array.clear(zsds)
+    xdSize = array.size(xds)
+    
+    if xdSize >= 3
+        Segment firstXd = array.get(xds, 0)
+        bool zsdIsUp = firstXd.isUp
+        int zsdStartIdx = firstXd.startIdx
+        float zsdStartPrice = firstXd.startPrice
+        
+        // 只跟踪走势段方向的极值
+        float zsdExtreme = firstXd.endPrice
+        int zsdExtremeBar = firstXd.endIdx
+        int zsdExtremeIdx = 0
+        
+        // 特征序列状态
+        float zsdPrevCharHigh = na
+        float zsdPrevCharLow = na
+        int xdCount = 1
+        
+        for i = 1 to xdSize - 1
+            Segment currXd = array.get(xds, i)
+            xdCount += 1
+            
+            // 只为走势段方向的线段更新极值
+            if zsdIsUp and currXd.isUp
+                if currXd.endPrice > zsdExtreme
+                    zsdExtreme := currXd.endPrice
+                    zsdExtremeBar := currXd.endIdx
+                    zsdExtremeIdx := i
+            else if not zsdIsUp and not currXd.isUp
+                if currXd.endPrice < zsdExtreme
+                    zsdExtreme := currXd.endPrice
+                    zsdExtremeBar := currXd.endIdx
+                    zsdExtremeIdx := i
+            
+            bool zsdEnded = false
+            
+            // 特征序列检查（至少3段）
+            if xdCount >= 3
+                if zsdIsUp and not currXd.isUp
+                    float charHigh = currXd.startPrice
+                    if not na(zsdPrevCharHigh) and charHigh < zsdPrevCharHigh
+                        zsdEnded := true
+                    zsdPrevCharHigh := charHigh
+                
+                else if not zsdIsUp and currXd.isUp
+                    float charLow = currXd.startPrice
+                    if not na(zsdPrevCharLow) and charLow > zsdPrevCharLow
+                        zsdEnded := true
+                    zsdPrevCharLow := charLow
+            
+            if zsdEnded
+                array.push(zsds, Segment.new(zsdStartIdx, zsdExtremeBar, zsdStartPrice, zsdExtreme, zsdIsUp, 0, 0))
+                
+                // 保存旧极值索引用于重扫描
+                int zsdRescanFrom = zsdExtremeIdx
+                
+                zsdStartIdx := zsdExtremeBar
+                zsdStartPrice := zsdExtreme
+                zsdIsUp := not zsdIsUp
+                
+                zsdExtreme := zsdIsUp ? -1e10 : 1e10
+                zsdExtremeBar := zsdStartIdx
+                zsdExtremeIdx := zsdRescanFrom
+                zsdPrevCharHigh := na
+                zsdPrevCharLow := na
+                xdCount := 0
+                
+                // 重新处理极值点之后的线段
+                for j = zsdRescanFrom + 1 to i
+                    if j < xdSize
+                        Segment reXd = array.get(xds, j)
+                        xdCount += 1
+                        if zsdIsUp and reXd.isUp and reXd.endPrice > zsdExtreme
+                            zsdExtreme := reXd.endPrice
+                            zsdExtremeBar := reXd.endIdx
+                            zsdExtremeIdx := j
+                        else if not zsdIsUp and not reXd.isUp and reXd.endPrice < zsdExtreme
+                            zsdExtreme := reXd.endPrice
+                            zsdExtremeBar := reXd.endIdx
+                            zsdExtremeIdx := j
+                        if zsdIsUp and not reXd.isUp
+                            zsdPrevCharHigh := reXd.startPrice
+                        else if not zsdIsUp and reXd.isUp
+                            zsdPrevCharLow := reXd.startPrice
+        
+        if xdCount >= 2
+            array.push(zsds, Segment.new(zsdStartIdx, zsdExtremeBar, zsdStartPrice, zsdExtreme, zsdIsUp, 0, 0))
+
+// ============ 7.1 未完成走势段计算 ============
+var Segment pendingZsd = na
+var float pendingZsdStrength = 0.0
+
+if barstate.islast and array.size(zsds) > 0
+    Segment lastZsd = array.get(zsds, array.size(zsds) - 1)
+    
+    float pendingZsdEndPrice = lastZsd.endPrice
+    int pendingZsdEndBar = lastZsd.endIdx
+    
+    if array.size(xds) > 0
+        for xd in xds
+            if xd.startIdx >= lastZsd.endIdx
+                if lastZsd.isUp
+                    if xd.endPrice < pendingZsdEndPrice
+                        pendingZsdEndPrice := xd.endPrice
+                        pendingZsdEndBar := xd.endIdx
+                else
+                    if xd.endPrice > pendingZsdEndPrice
+                        pendingZsdEndPrice := xd.endPrice
+                        pendingZsdEndBar := xd.endIdx
+    
+    if not na(pendingXd)
+        if lastZsd.isUp
+            if pendingXd.endPrice < pendingZsdEndPrice
+                pendingZsdEndPrice := pendingXd.endPrice
+                pendingZsdEndBar := pendingXd.endIdx
+        else
+            if pendingXd.endPrice > pendingZsdEndPrice
+                pendingZsdEndPrice := pendingXd.endPrice
+                pendingZsdEndBar := pendingXd.endIdx
+    
+    if pendingZsdEndBar > lastZsd.endIdx
+        pendingZsd := Segment.new(lastZsd.endIdx, pendingZsdEndBar, lastZsd.endPrice, pendingZsdEndPrice, not lastZsd.isUp, 0, 0)
+        float lastZsdRange = math.abs(lastZsd.endPrice - lastZsd.startPrice)
+        float pendingZsdRange = math.abs(pendingZsdEndPrice - lastZsd.endPrice)
+        if lastZsdRange > 0
+            pendingZsdStrength := pendingZsdRange / lastZsdRange * 100
+
+// ============ 8. 中枢计算(按照缠论标准定义) ============
+// 中枢定义:
+// 1. 至少3个连续笔/段的重叠部分构成中枢
+// 2. 中枢区间:ZG = min(高点们), ZD = max(低点们),必须 ZG > ZD
+// 3. 延伸:中枢可以延伸,但需要元素与中枢区间有实质重叠
+// 4. 升级:当延伸达到9段时,中枢升级为更高级别
+// 5. 离开:价格完全脱离中枢区间则中枢结束
+
+var Zhongshu[] biZs = array.new<Zhongshu>()
+var Zhongshu[] xdZs = array.new<Zhongshu>()
+var Zhongshu[] zsdZs = array.new<Zhongshu>()
+
+calcZs(elements, zsColor) =>
+    Zhongshu[] results = array.new<Zhongshu>()
+    int size = array.size(elements)
+    
+    if size >= 3
+        int idx = 0
+        while idx <= size - 3
+            e1 = array.get(elements, idx)
+            e2 = array.get(elements, idx + 1)
+            e3 = array.get(elements, idx + 2)
+            
+            // 计算前3个元素的重叠区间
+            float h1 = math.max(e1.startPrice, e1.endPrice)
+            float l1 = math.min(e1.startPrice, e1.endPrice)
+            float h2 = math.max(e2.startPrice, e2.endPrice)
+            float l2 = math.min(e2.startPrice, e2.endPrice)
+            float h3 = math.max(e3.startPrice, e3.endPrice)
+            float l3 = math.min(e3.startPrice, e3.endPrice)
+            
+            // ZG = 高点中的最低点,ZD = 低点中的最高点
+            float zg = math.min(h1, h2, h3)
+            float zd = math.max(l1, l2, l3)
+            
+            // 必须有重叠才能形成中枢
+            if zg > zd
+                int lastBar = e3.endIdx
+                float gg = math.max(h1, h2, h3)  // 最高点
+                float dd = math.min(l1, l2, l3)  // 最低点
+                int enterIdx = idx
+                int exitIdx = idx + 2
+                int elemCount = 3  // 当前中枢包含的元素数量
+                
+                // 中枢延伸:检查后续元素是否进入中枢
+                int j = idx + 3
+                while j < size
+                    ej = array.get(elements, j)
+                    ejH = math.max(ej.startPrice, ej.endPrice)
+                    ejL = math.min(ej.startPrice, ej.endPrice)
+                    
+                    // 【关键修改】判断元素是否与中枢区间有实质重叠
+                    // 更严格的条件:元素必须真正"进入"中枢区间
+                    // 而不只是"触碰"
+                    
+                    // 条件1:元素完全在中枢上方(离开向上)
+                    bool exitUp = ejL > zg
+                    // 条件2:元素完全在中枢下方(离开向下)
+                    bool exitDown = ejH < zd
+                    
+                    // 如果离开中枢,结束
+                    if exitUp or exitDown
+                        break
+                    
+                    // 元素与中枢有重叠,延伸
+                    lastBar := ej.endIdx
+                    gg := math.max(gg, ejH)
+                    dd := math.min(dd, ejL)
+                    exitIdx := j
+                    elemCount += 1
+                    
+                    // 检查是否需要升级(9段)
+                    if elemCount >= 9
+                        // 中枢升级:结束当前中枢,开始新的计算
+                        break
+                    
+                    j += 1
+                
+                array.push(results, Zhongshu.new(e1.startIdx, lastBar, zg, zd, gg, dd, enterIdx, exitIdx, zsColor))
+                
+                // 从离开中枢的元素开始寻找下一个中枢
+                idx := exitIdx + 1
+            else
+                idx += 1
+    
+    results
+
+if barstate.islast and showMaster
+    array.clear(biZs)
+    array.clear(xdZs)
+    array.clear(zsdZs)
+    
+    // 【修复】中枢计算独立于显示开关
+    // 买卖点需要中枢数据,所以始终计算,但只在开关打开时显示
+    
+    // 笔级别中枢 - 如果显示中枢 或 显示买卖点,都需要计算
+    if showZsBi or showBspBi
+        tempZs = calcZs(bis, zsColorBi)
+        for zs in tempZs
+            array.push(biZs, zs)
+    
+    // 次级别中枢
+    if showZsXd or showBspXd
+        tempZs = calcZs(xds, zsColorXd)
+        for zs in tempZs
+            array.push(xdZs, zs)
+    
+    // 本级别中枢
+    if showZsZsd or showBspZsd
+        tempZs = calcZs(zsds, zsColorZsd)
+        for zs in tempZs
+            array.push(zsdZs, zs)
+
+// ============ 9. 买卖点计算 ============
+var BuySellPoint[] allBSP = array.new<BuySellPoint>()
+
+// MACD计算(用于背离检测)
+[macdLine, signalLine, macdHist] = ta.macd(close, 12, 26, 9)
+
+// 【改进】背驰检测 - 综合力度和MACD
+checkBC(elem1, elem2) =>
+    // 方法1:力度背驰(原有逻辑)
+    float range1 = math.abs(elem1.endPrice - elem1.startPrice)
+    float range2 = math.abs(elem2.endPrice - elem2.startPrice)
+    bool strengthBC = range1 > 0 and range2 / range1 < bcThreshold
+    
+    // 直接返回力度背驰结果
+    strengthBC
+
+// 【新增】MACD背离检测函数
+checkMACDDivergence(int bar1, float price1, int bar2, float price2, bool isBottom) =>
+    bool hasDivergence = false
+    
+    // 计算两个位置的MACD值
+    int offset1 = bar_index - bar1
+    int offset2 = bar_index - bar2
+    
+    if offset1 >= 0 and offset1 < 500 and offset2 >= 0 and offset2 < 500
+        float macd1 = macdHist[offset1]
+        float macd2 = macdHist[offset2]
+        
+        if isBottom
+            // 底背离:价格创新低,但MACD没有创新低(更高)
+            if price2 < price1 and macd2 > macd1
+                hasDivergence := true
+            // 或者价格差不多,但MACD明显更高
+            if math.abs(price2 - price1) / price1 < 0.02 and macd2 > macd1 * 0.7
+                hasDivergence := true
+        else
+            // 顶背离:价格创新高,但MACD没有创新高(更低)
+            if price2 > price1 and macd2 < macd1
+                hasDivergence := true
+            // 或者价格差不多,但MACD明显更低
+            if math.abs(price2 - price1) / price1 < 0.02 and macd2 < macd1 * 0.7
+                hasDivergence := true
+    
+    hasDivergence
+
+// 【新增】综合背驰检测(力度 + MACD)
+checkBCEnhanced(elem1, elem2, bool isBottom) =>
+    // 力度背驰
+    float range1 = math.abs(elem1.endPrice - elem1.startPrice)
+    float range2 = math.abs(elem2.endPrice - elem2.startPrice)
+    bool strengthBC = range1 > 0 and range2 / range1 < bcThreshold
+    
+    // MACD背离
+    bool macdBC = checkMACDDivergence(elem1.endIdx, elem1.endPrice, elem2.endIdx, elem2.endPrice, isBottom)
+    
+    // 任一条件满足即可(更宽松,捕捉更多信号)
+    strengthBC or macdBC
+
+// 辅助函数:为每个元素找到最近的相关中枢
+findRelevantZs(zhongshus, int elemStartIdx) =>
+    Zhongshu result = na
+    int zsSize = array.size(zhongshus)
+    if zsSize > 0
+        // 从后往前找最近的、在元素之前或包含元素的中枢
+        for j = zsSize - 1 to 0
+            zs = array.get(zhongshus, j)
+            if zs.startIdx <= elemStartIdx
+                result := zs
+                break
+    result
+
+calcBSP(elements, zhongshus, levelStr) =>
+    BuySellPoint[] results = array.new<BuySellPoint>()
+    
+    int elemSize = array.size(elements)
+    int zsSize = array.size(zhongshus)
+    
+    // 用数组记录已标记的barIdx，避免嵌套去重循环
+    int[] markedBars = array.new<int>()
+    
+    if elemSize >= 3
+        // ========== 一类买卖点 ==========
+        if showBSP1
+            for i = 2 to elemSize - 1
+                elem = array.get(elements, i)
+                prevSameDir = array.get(elements, i - 2)
+                
+                bool found1 = false
+                
+                // 方法1:基于最近中枢
+                if zsSize > 0 and not found1
+                    Zhongshu zs = findRelevantZs(zhongshus, elem.startIdx)
+                    if not na(zs)
+                        float zsRange2 = zs.gg - zs.dd
+                        float avgPrice2 = (zs.gg + zs.dd) / 2
+                        bool isExtremeZs2 = avgPrice2 > 0 ? zsRange2 / avgPrice2 > 0.5 : false
+                        
+                        // 一类买点
+                        if not elem.isUp and not prevSameDir.isUp
+                            bool priceCondition = isExtremeZs2 ? elem.endPrice < (zs.zg + zs.zd) / 2 : elem.endPrice < zs.zd
+                            if priceCondition
+                                bool hasBC = checkBC(prevSameDir, elem)
+                                if hasBC or elem.endPrice < zs.dd
+                                    array.push(results, BuySellPoint.new(elem.endIdx, elem.endPrice, 1, true, levelStr))
+                                    array.push(markedBars, elem.endIdx)
+                                    found1 := true
+                        
+                        // 一类卖点
+                        if not found1 and elem.isUp and prevSameDir.isUp
+                            bool priceCondition = isExtremeZs2 ? elem.endPrice > (zs.zg + zs.zd) / 2 : elem.endPrice > zs.zg
+                            if priceCondition
+                                bool hasBC = checkBC(prevSameDir, elem)
+                                if hasBC or elem.endPrice > zs.gg
+                                    array.push(results, BuySellPoint.new(elem.endIdx, elem.endPrice, 1, false, levelStr))
+                                    array.push(markedBars, elem.endIdx)
+                                    found1 := true
+                
+                // 方法2:趋势背驰(不依赖中枢位置)
+                if not found1
+                    if not elem.isUp and not prevSameDir.isUp
+                        if checkBC(prevSameDir, elem)
+                            array.push(results, BuySellPoint.new(elem.endIdx, elem.endPrice, 1, true, levelStr))
+                            array.push(markedBars, elem.endIdx)
+                    else if elem.isUp and prevSameDir.isUp
+                        if checkBC(prevSameDir, elem)
+                            array.push(results, BuySellPoint.new(elem.endIdx, elem.endPrice, 1, false, levelStr))
+                            array.push(markedBars, elem.endIdx)
+        
+        // ========== 二类买卖点 ==========
+        if showBSP2
+            // 方法1:基于一类买卖点（通过元素索引直接定位，避免嵌套循环）
+            for i = 2 to elemSize - 1
+                elem = array.get(elements, i)
+                
+                // 检查当前元素是否是一类买卖点
+                bool is1Buy = false
+                bool is1Sell = false
+                for r in results
+                    if r.bspType == 1 and r.barIdx == elem.endIdx
+                        if r.isBuy
+                            is1Buy := true
+                        else
+                            is1Sell := true
+                        break
+                
+                if (is1Buy or is1Sell) and i + 2 < elemSize
+                    elem1 = array.get(elements, i + 1)
+                    elem2 = array.get(elements, i + 2)
+                    if is1Buy
+                        if elem1.isUp and not elem2.isUp and elem2.endPrice > elem.endPrice
+                            if not array.includes(markedBars, elem2.endIdx)
+                                array.push(results, BuySellPoint.new(elem2.endIdx, elem2.endPrice, 2, true, levelStr))
+                                array.push(markedBars, elem2.endIdx)
+                    else if is1Sell
+                        if not elem1.isUp and elem2.isUp and elem2.endPrice < elem.endPrice
+                            if not array.includes(markedBars, elem2.endIdx)
+                                array.push(results, BuySellPoint.new(elem2.endIdx, elem2.endPrice, 2, false, levelStr))
+                                array.push(markedBars, elem2.endIdx)
+            
+            // 方法2:独立的二类买卖点 - 不再创新低/新高
+            for i = 2 to elemSize - 1
+                elem = array.get(elements, i)
+                if array.includes(markedBars, elem.endIdx)
+                    continue
+                prevSameDir = array.get(elements, i - 2)
+                
+                if not elem.isUp and not prevSameDir.isUp
+                    if elem.endPrice > prevSameDir.endPrice
+                        array.push(results, BuySellPoint.new(elem.endIdx, elem.endPrice, 2, true, levelStr))
+                        array.push(markedBars, elem.endIdx)
+                else if elem.isUp and prevSameDir.isUp
+                    if elem.endPrice < prevSameDir.endPrice
+                        array.push(results, BuySellPoint.new(elem.endIdx, elem.endPrice, 2, false, levelStr))
+                        array.push(markedBars, elem.endIdx)
+        
+        // ========== 三类买卖点 ==========
+        if showBSP3
+            for i = 1 to elemSize - 1
+                elem = array.get(elements, i)
+                if array.includes(markedBars, elem.endIdx)
+                    continue
+                prevElem = array.get(elements, i - 1)
+                
+                bool found3 = false
+                
+                // 方法1:基于最近中枢
+                if zsSize > 0
+                    Zhongshu zs = findRelevantZs(zhongshus, elem.startIdx)
+                    if not na(zs) and elem.startIdx > zs.startIdx
+                        // 三类买点:回调不进入中枢
+                        if prevElem.isUp and not elem.isUp
+                            if prevElem.endPrice > zs.zg and elem.endPrice > zs.zg
+                                array.push(results, BuySellPoint.new(elem.endIdx, elem.endPrice, 3, true, levelStr))
+                                array.push(markedBars, elem.endIdx)
+                                found3 := true
+                        
+                        // 三类卖点:反弹不进入中枢
+                        if not found3 and not prevElem.isUp and elem.isUp
+                            if prevElem.endPrice < zs.zd and elem.endPrice < zs.zd
+                                array.push(results, BuySellPoint.new(elem.endIdx, elem.endPrice, 3, false, levelStr))
+                                array.push(markedBars, elem.endIdx)
+                                found3 := true
+                
+                // 方法2:无中枢时的三类买卖点
+                if not found3 and i >= 3
+                    prevPrevElem = array.get(elements, i - 2)
+                    if prevElem.isUp and not elem.isUp and not prevPrevElem.isUp
+                        if elem.endPrice > prevPrevElem.endPrice
+                            array.push(results, BuySellPoint.new(elem.endIdx, elem.endPrice, 3, true, levelStr))
+                            array.push(markedBars, elem.endIdx)
+                    else if not prevElem.isUp and elem.isUp and prevPrevElem.isUp
+                        if elem.endPrice < prevPrevElem.endPrice
+                            array.push(results, BuySellPoint.new(elem.endIdx, elem.endPrice, 3, false, levelStr))
+                            array.push(markedBars, elem.endIdx)
+    
+    results
+
+if barstate.islast and showMaster and showBSP
+    array.clear(allBSP)
+    
+    // 买卖点计算(需要有中枢数据)
+    if showBspBi and array.size(biZs) > 0
+        bspResults = calcBSP(bis, biZs, "bi")
+        for bsp in bspResults
+            array.push(allBSP, bsp)
+    
+    if showBspXd and array.size(xdZs) > 0
+        bspResults = calcBSP(xds, xdZs, "xd")
+        for bsp in bspResults
+            array.push(allBSP, bsp)
+    
+    if showBspZsd and array.size(zsdZs) > 0
+        bspResults = calcBSP(zsds, zsdZs, "zsd")
+        for bsp in bspResults
+            array.push(allBSP, bsp)
+    
+    // 去重逻辑:同一位置只保留优先级最高的买卖点
+    // 优先级:1类 > 2类 > 3类
+    BuySellPoint[] dedupedBSP = array.new<BuySellPoint>()
+    
+    for bsp in allBSP
+        bool shouldAdd = true
+        int replaceIdx = -1
+        
+        int dedupSize = array.size(dedupedBSP)
+        if dedupSize > 0
+            for i = 0 to dedupSize - 1
+                existing = array.get(dedupedBSP, i)
+                // 同一位置(3根K线内)且同一级别且同方向
+                if math.abs(existing.barIdx - bsp.barIdx) <= 3 and existing.level == bsp.level and existing.isBuy == bsp.isBuy
+                    // 如果新的优先级更高(类型数字更小),替换
+                    if bsp.bspType < existing.bspType
+                        replaceIdx := i
+                    else
+                        shouldAdd := false
+                    break
+        
+        if replaceIdx >= 0
+            array.set(dedupedBSP, replaceIdx, bsp)
+        else if shouldAdd
+            array.push(dedupedBSP, bsp)
+    
+    // 用去重后的数组替换
+    array.clear(allBSP)
+    for bsp in dedupedBSP
+        array.push(allBSP, bsp)
+
+// ============ 10. 背驰检测 ============
+var Beichi[] allBC = array.new<Beichi>()
+
+// 使用上面已定义的 macdLine, signalLine, macdHist
+
+calcTrendBeichi(elements, zhongshus, levelStr) =>
+    Beichi[] results = array.new<Beichi>()
+    int zsSize = array.size(zhongshus)
+    int elemSize = array.size(elements)
+    
+    if zsSize >= 2 and elemSize >= 5
+        Zhongshu zsA = array.get(zhongshus, zsSize - 2)
+        Zhongshu zsB = array.get(zhongshus, zsSize - 1)
+        
+        int bIdx = -1
+        int cIdx = -1
+        
+        for i = 0 to elemSize - 1
+            elem = array.get(elements, i)
+            if bIdx == -1 and elem.startIdx >= zsA.endIdx and elem.endIdx <= zsB.startIdx + 3
+                bIdx := i
+            if elem.startIdx >= zsB.endIdx - 3 and elem.endIdx > zsB.endIdx
+                cIdx := i
+                break
+        
+        if bIdx >= 0 and cIdx > bIdx
+            bElem = array.get(elements, bIdx)
+            cElem = array.get(elements, cIdx)
+            
+            if bElem.isUp == cElem.isUp
+                float bRange = math.abs(bElem.endPrice - bElem.startPrice)
+                float cRange = math.abs(cElem.endPrice - cElem.startPrice)
+                
+                bool isNewExtreme = false
+                if cElem.isUp
+                    isNewExtreme := cElem.endPrice > bElem.endPrice
+                else
+                    isNewExtreme := cElem.endPrice < bElem.endPrice
+                
+                if bRange > 0 and isNewExtreme
+                    float ratio = cRange / bRange
+                    if ratio < bcThreshold
+                        float bcStrength = (1 - ratio) * 100
+                        if cElem.isUp
+                            array.push(results, Beichi.new(cElem.endIdx, cElem.endPrice, false, levelStr, "趋势背驰", bcStrength))
+                        else
+                            array.push(results, Beichi.new(cElem.endIdx, cElem.endPrice, true, levelStr, "趋势背驰", bcStrength))
+    
+    results
+
+calcPanzhengBeichi(elements, zhongshus, levelStr) =>
+    Beichi[] results = array.new<Beichi>()
+    int zsSize = array.size(zhongshus)
+    int elemSize = array.size(elements)
+    
+    if zsSize >= 1 and elemSize >= 3
+        for zsIdx = 0 to zsSize - 1
+            Zhongshu zs = array.get(zhongshus, zsIdx)
+            
+            if zsSize >= 2 and zsIdx == zsSize - 1
+                continue
+            
+            int aIdx = -1
+            int bIdx = -1
+            
+            for i = 0 to elemSize - 1
+                elem = array.get(elements, i)
+                if aIdx == -1 and elem.endIdx <= zs.startIdx + 3
+                    aIdx := i
+                if elem.startIdx >= zs.endIdx - 3 and elem.endIdx > zs.endIdx
+                    bIdx := i
+                    break
+            
+            if aIdx >= 0 and bIdx > aIdx
+                aElem = array.get(elements, aIdx)
+                bElem = array.get(elements, bIdx)
+                
+                if aElem.isUp == bElem.isUp
+                    float aRange = math.abs(aElem.endPrice - aElem.startPrice)
+                    float bRange = math.abs(bElem.endPrice - bElem.startPrice)
+                    
+                    if aRange > 0
+                        float ratio = bRange / aRange
+                        if ratio < bcThreshold
+                            float bcStrength = (1 - ratio) * 100
+                            if bElem.isUp
+                                array.push(results, Beichi.new(bElem.endIdx, bElem.endPrice, false, levelStr, "盘整背驰", bcStrength))
+                            else
+                                array.push(results, Beichi.new(bElem.endIdx, bElem.endPrice, true, levelStr, "盘整背驰", bcStrength))
+    
+    results
+
+calcBeili(elements, levelStr) =>
+    Beichi[] results = array.new<Beichi>()
+    int size = array.size(elements)
+    
+    if size >= 3
+        for i = 2 to size - 1
+            curr = array.get(elements, i)
+            prev = array.get(elements, i - 2)
+            
+            if curr.isUp == prev.isUp
+                float range1 = math.abs(prev.endPrice - prev.startPrice)
+                float range2 = math.abs(curr.endPrice - curr.startPrice)
+                
+                if range1 > 0
+                    float ratio = range2 / range1
+                    if ratio < bcThreshold
+                        float bcStrength = (1 - ratio) * 100
+                        
+                        bool isNewExtreme = false
+                        if curr.isUp
+                            isNewExtreme := curr.endPrice > prev.endPrice
+                        else
+                            isNewExtreme := curr.endPrice < prev.endPrice
+                        
+                        if isNewExtreme
+                            if curr.isUp
+                                array.push(results, Beichi.new(curr.endIdx, curr.endPrice, false, levelStr, "背离", bcStrength))
+                            else
+                                array.push(results, Beichi.new(curr.endIdx, curr.endPrice, true, levelStr, "背离", bcStrength))
+    
+    results
+
+if barstate.islast and showMaster and showBC
+    array.clear(allBC)
+    
+    if showBcBi and array.size(bis) >= 3
+        if array.size(biZs) >= 2
+            bcResults = calcTrendBeichi(bis, biZs, "bi")
+            for bc in bcResults
+                array.push(allBC, bc)
+        
+        if array.size(biZs) >= 1
+            bcResults = calcPanzhengBeichi(bis, biZs, "bi")
+            for bc in bcResults
+                bool exists = false
+                for existing in allBC
+                    if math.abs(existing.barIdx - bc.barIdx) <= 3 and existing.level == bc.level
+                        exists := true
+                        break
+                if not exists
+                    array.push(allBC, bc)
+        
+        bcResults = calcBeili(bis, "bi")
+        for bc in bcResults
+            bool exists = false
+            for existing in allBC
+                if math.abs(existing.barIdx - bc.barIdx) <= 3 and existing.level == bc.level
+                    exists := true
+                    break
+            if not exists
+                array.push(allBC, bc)
+    
+    if showBcXd and array.size(xds) >= 3
+        if array.size(xdZs) >= 2
+            bcResults = calcTrendBeichi(xds, xdZs, "xd")
+            for bc in bcResults
+                array.push(allBC, bc)
+        
+        if array.size(xdZs) >= 1
+            bcResults = calcPanzhengBeichi(xds, xdZs, "xd")
+            for bc in bcResults
+                bool exists = false
+                for existing in allBC
+                    if math.abs(existing.barIdx - bc.barIdx) <= 5 and existing.level == bc.level
+                        exists := true
+                        break
+                if not exists
+                    array.push(allBC, bc)
+        
+        bcResults = calcBeili(xds, "xd")
+        for bc in bcResults
+            bool exists = false
+            for existing in allBC
+                if math.abs(existing.barIdx - bc.barIdx) <= 5 and existing.level == bc.level
+                    exists := true
+                    break
+            if not exists
+                array.push(allBC, bc)
+    
+    if showBcZsd and array.size(zsds) >= 3
+        if array.size(zsdZs) >= 2
+            bcResults = calcTrendBeichi(zsds, zsdZs, "zsd")
+            for bc in bcResults
+                array.push(allBC, bc)
+        
+        if array.size(zsdZs) >= 1
+            bcResults = calcPanzhengBeichi(zsds, zsdZs, "zsd")
+            for bc in bcResults
+                bool exists = false
+                for existing in allBC
+                    if math.abs(existing.barIdx - bc.barIdx) <= 10 and existing.level == bc.level
+                        exists := true
+                        break
+                if not exists
+                    array.push(allBC, bc)
+        
+        bcResults = calcBeili(zsds, "zsd")
+        for bc in bcResults
+            bool exists = false
+            for existing in allBC
+                if math.abs(existing.barIdx - bc.barIdx) <= 10 and existing.level == bc.level
+                    exists := true
+                    break
+            if not exists
+                array.push(allBC, bc)
+
+// ============ 10.1 潜在买卖点计算 ============
+var PotentialBSP[] potentialBSPs = array.new<PotentialBSP>()
+
+if barstate.islast and showMaster and showPotentialBSP
+    array.clear(potentialBSPs)
+    
+    if not na(pendingBi) and array.size(bis) >= 2
+        Bi lastBi = array.get(bis, array.size(bis) - 1)
+        float lastBiRange = math.abs(lastBi.endPrice - lastBi.startPrice)
+        float pendingRange = math.abs(pendingBi.endPrice - pendingBi.startPrice)
+        bool hasPotentialBC = lastBiRange > 0 and pendingRange / lastBiRange < bcThreshold
+        
+        if pendingBi.isUp
+            if pendingBi.endPrice > lastBi.startPrice and hasPotentialBC
+                float strength = 100 - (pendingRange / lastBiRange * 100)
+                array.push(potentialBSPs, PotentialBSP.new(pendingBi.endIdx, pendingBi.endPrice, false, "笔背驰", "bi", strength))
+        else
+            if pendingBi.endPrice < lastBi.startPrice and hasPotentialBC
+                float strength = 100 - (pendingRange / lastBiRange * 100)
+                array.push(potentialBSPs, PotentialBSP.new(pendingBi.endIdx, pendingBi.endPrice, true, "笔背驰", "bi", strength))
+    
+    if not na(pendingXd) and array.size(xds) >= 2
+        Segment lastXd = array.get(xds, array.size(xds) - 1)
+        float lastXdRange = math.abs(lastXd.endPrice - lastXd.startPrice)
+        float pendingXdRange = math.abs(pendingXd.endPrice - pendingXd.startPrice)
+        bool hasPotentialXdBC = lastXdRange > 0 and pendingXdRange / lastXdRange < bcThreshold
+        
+        if pendingXd.isUp
+            if pendingXd.endPrice > lastXd.startPrice and hasPotentialXdBC
+                float strength = 100 - (pendingXdRange / lastXdRange * 100)
+                array.push(potentialBSPs, PotentialBSP.new(pendingXd.endIdx, pendingXd.endPrice, false, "段背驰", "xd", strength))
+        else
+            if pendingXd.endPrice < lastXd.startPrice and hasPotentialXdBC
+                float strength = 100 - (pendingXdRange / lastXdRange * 100)
+                array.push(potentialBSPs, PotentialBSP.new(pendingXd.endIdx, pendingXd.endPrice, true, "段背驰", "xd", strength))
+    
+    if not na(pendingZsd) and array.size(zsds) >= 2
+        Segment lastZsd = array.get(zsds, array.size(zsds) - 1)
+        float lastZsdRange = math.abs(lastZsd.endPrice - lastZsd.startPrice)
+        float pendingZsdRange = math.abs(pendingZsd.endPrice - pendingZsd.startPrice)
+        bool hasPotentialZsdBC = lastZsdRange > 0 and pendingZsdRange / lastZsdRange < bcThreshold
+        
+        if pendingZsd.isUp
+            if pendingZsd.endPrice > lastZsd.startPrice and hasPotentialZsdBC
+                float strength = 100 - (pendingZsdRange / lastZsdRange * 100)
+                array.push(potentialBSPs, PotentialBSP.new(pendingZsd.endIdx, pendingZsd.endPrice, false, "本级别背驰", "zsd", strength))
+        else
+            if pendingZsd.endPrice < lastZsd.startPrice and hasPotentialZsdBC
+                float strength = 100 - (pendingZsdRange / lastZsdRange * 100)
+                array.push(potentialBSPs, PotentialBSP.new(pendingZsd.endIdx, pendingZsd.endPrice, true, "本级别背驰", "zsd", strength))
+    
+    if array.size(xdZs) > 0 and not na(pendingXd)
+        Zhongshu lastXdZs = array.get(xdZs, array.size(xdZs) - 1)
+        if not pendingXd.isUp
+            if pendingXd.startPrice > lastXdZs.zg and pendingXd.endPrice > lastXdZs.zg
+                array.push(potentialBSPs, PotentialBSP.new(pendingXd.endIdx, pendingXd.endPrice, true, "次级别三买", "xd", 75))
+        if pendingXd.isUp
+            if pendingXd.startPrice < lastXdZs.zd and pendingXd.endPrice < lastXdZs.zd
+                array.push(potentialBSPs, PotentialBSP.new(pendingXd.endIdx, pendingXd.endPrice, false, "次级别三卖", "xd", 75))
+    
+    if array.size(zsdZs) > 0 and not na(pendingZsd)
+        Zhongshu lastZsdZs = array.get(zsdZs, array.size(zsdZs) - 1)
+        if not pendingZsd.isUp
+            if pendingZsd.startPrice > lastZsdZs.zg and pendingZsd.endPrice > lastZsdZs.zg
+                array.push(potentialBSPs, PotentialBSP.new(pendingZsd.endIdx, pendingZsd.endPrice, true, "本级别三买", "zsd", 80))
+        if pendingZsd.isUp
+            if pendingZsd.startPrice < lastZsdZs.zd and pendingZsd.endPrice < lastZsdZs.zd
+                array.push(potentialBSPs, PotentialBSP.new(pendingZsd.endIdx, pendingZsd.endPrice, false, "本级别三卖", "zsd", 80))
+    
+    if array.size(biZs) > 0 and not na(pendingBi)
+        Zhongshu lastZs = array.get(biZs, array.size(biZs) - 1)
+        if not pendingBi.isUp
+            if pendingBi.startPrice > lastZs.zg and pendingBi.endPrice > lastZs.zg
+                array.push(potentialBSPs, PotentialBSP.new(pendingBi.endIdx, pendingBi.endPrice, true, "潜在三买", "bi", 70))
+        if pendingBi.isUp
+            if pendingBi.startPrice < lastZs.zd and pendingBi.endPrice < lastZs.zd
+                array.push(potentialBSPs, PotentialBSP.new(pendingBi.endIdx, pendingBi.endPrice, false, "潜在三卖", "bi", 70))
+
+// ============ 11. 绘制 ============
+if barstate.islast and showMaster
+    if showMerged
+        for mk in mks
+            box.new(mk.startBar, mk.h, mk.endBar, mk.l, border_color=color.new(color.gray, 60), bgcolor=color.new(color.gray, 95))
+    
+    if showBi and array.size(bis) > 0
+        for b in bis
+            line.new(b.startIdx, b.startPrice, b.endIdx, b.endPrice, color=b.isUp ? upBiColor : downBiColor, width=2)
+    
+    if showPendingBi and not na(pendingBi)
+        line.new(pendingBi.startIdx, pendingBi.startPrice, pendingBi.endIdx, pendingBi.endPrice, color=pendingBiColor, width=2, style=line.style_dashed)
+        
+        if showPendingStrength and pendingBiStrength > 0
+            string strengthText = "笔级别力度:" + str.tostring(pendingBiStrength, "#") + "%"
+            color strengthBgColor = pendingBiStrength > 100 ? color.green : (pendingBiStrength >= 70 ? color.orange : color.red)
+            label.new(pendingBi.endIdx - 3, pendingBi.endPrice, strengthText, style=label.style_label_right, color=strengthBgColor, textcolor=color.white, size=size.small)
+    
+    if showXd and array.size(xds) > 0
+        for x in xds
+            line.new(x.startIdx, x.startPrice, x.endIdx, x.endPrice, color=xdColor, width=3)
+    
+    if showPendingXd and not na(pendingXd)
+        line.new(pendingXd.startIdx, pendingXd.startPrice, pendingXd.endIdx, pendingXd.endPrice, color=pendingXdColor, width=3, style=line.style_dashed)
+        
+        if showPendingStrength and pendingXdStrength > 0
+            string xdStrengthText = "次级别力度:" + str.tostring(pendingXdStrength, "#") + "%"
+            color xdStrengthBgColor = pendingXdStrength > 100 ? color.green : (pendingXdStrength >= 70 ? color.orange : color.red)
+            label.new(pendingXd.endIdx, pendingXd.endPrice, xdStrengthText, style=pendingXd.isUp ? label.style_label_down : label.style_label_up, color=xdStrengthBgColor, textcolor=color.white, size=size.normal)
+    
+    if showZsd and array.size(zsds) > 0
+        for z in zsds
+            line.new(z.startIdx, z.startPrice, z.endIdx, z.endPrice, color=zsdColor, width=5)
+    
+    if showPendingZsd and not na(pendingZsd)
+        line.new(pendingZsd.startIdx, pendingZsd.startPrice, pendingZsd.endIdx, pendingZsd.endPrice, color=pendingZsdColor, width=5, style=line.style_dashed)
+        
+        if showPendingStrength and pendingZsdStrength > 0
+            string zsdStrengthText = "本级别力度:" + str.tostring(pendingZsdStrength, "#") + "%"
+            color zsdStrengthBgColor = pendingZsdStrength > 100 ? color.green : (pendingZsdStrength >= 70 ? color.orange : color.red)
+            label.new(pendingZsd.endIdx + 2, pendingZsd.endPrice, zsdStrengthText, style=pendingZsd.isUp ? label.style_label_down : label.style_label_up, color=zsdStrengthBgColor, textcolor=color.white, size=size.large)
+    
+    if showFractal and array.size(fxs) > 0
+        for f in fxs
+            label.new(f.barIndex, f.price, f.isTop ? "顶" : "底", style=f.isTop ? label.style_label_down : label.style_label_up, color=f.isTop ? topColor : bottomColor, textcolor=color.white, size=size.tiny)
+    
+    if showZhongshu
+        // 【修复】根据各级别开关独立控制显示
+        if showZsBi
+            for zs in biZs
+                box.new(zs.startIdx, zs.zg, zs.endIdx, zs.zd, bgcolor=zs.col, border_color=color.new(color.blue, 30))
+        if showZsXd
+            for zs in xdZs
+                box.new(zs.startIdx, zs.zg, zs.endIdx, zs.zd, bgcolor=zs.col, border_color=color.new(color.purple, 30))
+        if showZsZsd
+            for zs in zsdZs
+                box.new(zs.startIdx, zs.zg, zs.endIdx, zs.zd, bgcolor=zs.col, border_color=color.new(color.orange, 30), border_width=2)
+    
+    // ========== 绘制买卖点(纯文字放在止损价位置) ==========
+    if showBSP and array.size(allBSP) > 0
+        for bsp in allBSP
+            bool shouldShow = false
+            string levelPrefix = ""
+            float stopLossPct = 0.0
+            
+            if bsp.level == "bi" and showBspBi
+                shouldShow := true
+                levelPrefix := "笔"
+                stopLossPct := biStopLossPct
+            else if bsp.level == "xd" and showBspXd
+                shouldShow := true
+                levelPrefix := "次级别"
+                stopLossPct := xdStopLossPct
+            else if bsp.level == "zsd" and showBspZsd
+                shouldShow := true
+                levelPrefix := "本级别"
+                stopLossPct := zsdStopLossPct
+            
+            if shouldShow
+                string bspTypeText = ""
+                if bsp.bspType == 1
+                    bspTypeText := "1"
+                else if bsp.bspType == 2
+                    bspTypeText := "2"
+                else if bsp.bspType == 3
+                    bspTypeText := "3"
+                
+                string bspDirection = bsp.isBuy ? "买" : "卖"
+                string bspText = levelPrefix + bspTypeText + bspDirection
+                
+                // 计算止损价
+                float stopLossPrice = 0.0
+                if bsp.isBuy
+                    stopLossPrice := bsp.price * (1 - stopLossPct / 100)
+                else
+                    stopLossPrice := bsp.price * (1 + stopLossPct / 100)
+                
+                // 生成tooltip内容
+                string tooltipText = "══════════════\n"
+                tooltipText += "📍 " + levelPrefix + bspTypeText + (bsp.isBuy ? "类买点" : "类卖点") + "\n"
+                tooltipText += "══════════════\n"
+                tooltipText += "入场价: " + str.tostring(bsp.price, "#.##") + "\n"
+                tooltipText += "止损价: " + str.tostring(stopLossPrice, "#.##") + "\n"
+                tooltipText += "止损幅度: " + str.tostring(stopLossPct, "#.#") + "%\n"
+                tooltipText += "══════════════"
+                
+                // 纯文字标签 - 放在止损价位置
+                color textColor = bsp.isBuy ? bspBuyColor : bspSellColor
+                
+                // 买点:止损在下方,标签放在止损价下方
+                // 卖点:止损在上方,标签放在止损价上方
+                label.new(bsp.barIdx, stopLossPrice, bspText, style=label.style_none, textcolor=textColor, size=size.normal, tooltip=tooltipText)
+    
+    // ========== 绘制背驰信号(纯文字放在止损价位置) ==========
+    if showBC and array.size(allBC) > 0
+        for bc in allBC
+            bool shouldShowBc = false
+            string bcLevelPrefix = ""
+            float bcStopLossPct = 0.0
+            
+            if bc.level == "bi" and showBcBi
+                shouldShowBc := true
+                bcLevelPrefix := "笔"
+                bcStopLossPct := biStopLossPct
+            else if bc.level == "xd" and showBcXd
+                shouldShowBc := true
+                bcLevelPrefix := "次级别"
+                bcStopLossPct := xdStopLossPct
+            else if bc.level == "zsd" and showBcZsd
+                shouldShowBc := true
+                bcLevelPrefix := "本级别"
+                bcStopLossPct := zsdStopLossPct
+            
+            if shouldShowBc
+                string bcTypeShort = ""
+                if bc.bcType == "趋势背驰"
+                    bcTypeShort := "趋背"
+                else if bc.bcType == "盘整背驰"
+                    bcTypeShort := "盘背"
+                else
+                    bcTypeShort := "背离"
+                
+                string bcText = bcLevelPrefix + bcTypeShort + str.tostring(bc.strength, "#") + "%"
+                color bcTextColor = bc.isBuy ? bspBuyColor : bspSellColor
+                
+                // 计算止损价位置(背驰信号用额外偏移避免与买卖点重叠)
+                float bcStopLossPrice = bc.isBuy ? bc.price * (1 - (bcStopLossPct + 2.0) / 100) : bc.price * (1 + (bcStopLossPct + 2.0) / 100)
+                
+                string bcTooltip = "══════════════\n"
+                bcTooltip += (bc.isBuy ? "🔵 底" : "🔴 顶") + bc.bcType + "\n"
+                bcTooltip += "══════════════\n"
+                bcTooltip += "级别: " + bcLevelPrefix + "\n"
+                bcTooltip += "强度: " + str.tostring(bc.strength, "#.#") + "%\n"
+                bcTooltip += "ä»·æ ¼: " + str.tostring(bc.price, "#.##") + "\n"
+                bcTooltip += "══════════════"
+                
+                label.new(bc.barIdx, bcStopLossPrice, bcText, style=label.style_none, textcolor=bcTextColor, size=size.small, tooltip=bcTooltip)
+    
+    // ========== 绘制潜在买卖点(纯文字放在止损价位置) ==========
+    if showPotentialBSP and array.size(potentialBSPs) > 0
+        for pbsp in potentialBSPs
+            string pbspText = pbsp.isBuy ? "潜买" : "潜卖"
+            pbspText += " " + pbsp.reason
+            
+            // 计算止损(潜在买卖点用额外偏移)
+            float pStopLossPct = pbsp.level == "zsd" ? zsdStopLossPct : (pbsp.level == "xd" ? xdStopLossPct : biStopLossPct)
+            float pStopLossPrice = pbsp.isBuy ? pbsp.price * (1 - (pStopLossPct + 1.0) / 100) : pbsp.price * (1 + (pStopLossPct + 1.0) / 100)
+            
+            string pTooltip = "══════════════\n"
+            pTooltip += (pbsp.isBuy ? "🟢 潜在买点" : "🔴 潜在卖点") + "\n"
+            pTooltip += "══════════════\n"
+            pTooltip += "原因: " + pbsp.reason + "\n"
+            pTooltip += "强度: " + str.tostring(pbsp.strength, "#") + "%\n"
+            pTooltip += "入场价: " + str.tostring(pbsp.price, "#.##") + "\n"
+            pTooltip += "止损价: " + str.tostring(pbsp.isBuy ? pbsp.price * (1 - pStopLossPct / 100) : pbsp.price * (1 + pStopLossPct / 100), "#.##") + "\n"
+            pTooltip += "止损幅度: " + str.tostring(pStopLossPct, "#.#") + "%\n"
+            pTooltip += "══════════════"
+            
+            color pTextColor = pbsp.isBuy ? potentialBuyTextColor : potentialSellTextColor
+            
+            label.new(pbsp.barIdx, pStopLossPrice, pbspText, style=label.style_none, textcolor=pTextColor, size=size.small, tooltip=pTooltip)
+    
+    // ========== 实时背驰预警 ==========
+    if showRealtimeBC and not na(pendingBi) and array.size(bis) >= 2
+        Bi lastBi = array.get(bis, array.size(bis) - 1)
+        float lastBiRange = math.abs(lastBi.endPrice - lastBi.startPrice)
+        float pendingRange = math.abs(pendingBi.endPrice - pendingBi.startPrice)
+        
+        if lastBiRange > 0
+            float ratio = pendingRange / lastBiRange
+            if ratio < bcThreshold
+                color warnColor = pendingBi.isUp ? color.red : color.aqua
+                string warnText = pendingBi.isUp ? "⚠️顶背驰形成中" : "⚠️底背驰形成中"
+                float bcStrength = (1 - ratio) * 100
+                warnText := warnText + "\n背驰强度: " + str.tostring(bcStrength, "#.0") + "%"
+                
+                label.new(bar_index + 3, pendingBi.endPrice, warnText, style=label.style_label_left, color=color.new(warnColor, 30), textcolor=color.white, size=size.normal)
+
+// ============ 12. 信号解读面板 ============
+var table infoPanel = table.new(position.top_right, 3, 8, bgcolor=color.white, border_color=color.black, border_width=1, frame_color=color.black, frame_width=2)
+
+if barstate.islast and showMaster
+    // 标题行
+    table.cell(infoPanel, 0, 0, "级别", text_color=color.white, text_size=size.large, bgcolor=color.navy)
+    table.cell(infoPanel, 1, 0, "信号", text_color=color.white, text_size=size.large, bgcolor=color.navy)
+    table.cell(infoPanel, 2, 0, "含义", text_color=color.white, text_size=size.large, bgcolor=color.navy)
+    
+    // ===== 本级别分析 =====
+    string zsdSignal = ""
+    string zsdMeaning = ""
+    color zsdSignalColor = color.gray
+    
+    // 本级别力度
+    if pendingZsdStrength > 0
+        zsdSignal := "力度:" + str.tostring(pendingZsdStrength, "#") + "%"
+        if pendingZsdStrength > 100
+            zsdMeaning := pendingZsd.isUp ? "上涨加速,多头强势" : "下跌加速,空头强势"
+            zsdSignalColor := pendingZsd.isUp ? color.green : color.red
+        else if pendingZsdStrength >= 70
+            zsdMeaning := pendingZsd.isUp ? "上涨正常" : "下跌正常"
+            zsdSignalColor := color.orange
+        else if pendingZsdStrength >= 50
+            zsdMeaning := pendingZsd.isUp ? "上涨减弱,注意风险" : "下跌减弱,关注反弹"
+            zsdSignalColor := color.orange
+        else
+            zsdMeaning := pendingZsd.isUp ? "上涨极弱,顶背驰" : "下跌极弱,底背驰"
+            zsdSignalColor := pendingZsd.isUp ? color.maroon : color.teal
+    
+    // 本级别买卖点
+    string zsdBspText = ""
+    for bsp in allBSP
+        if bsp.level == "zsd" and bsp.barIdx >= bar_index - 50
+            string bspType = str.tostring(bsp.bspType) + (bsp.isBuy ? "买" : "卖")
+            zsdBspText := zsdBspText + bspType + " "
+    if zsdBspText != ""
+        zsdSignal := zsdSignal + (zsdSignal != "" ? "\n" : "") + zsdBspText
+    
+    table.cell(infoPanel, 0, 1, "本级别", text_color=color.white, text_size=size.large, bgcolor=color.orange)
+    table.cell(infoPanel, 1, 1, zsdSignal != "" ? zsdSignal : "无信号", text_color=zsdSignalColor, text_size=size.normal, bgcolor=color.white)
+    table.cell(infoPanel, 2, 1, zsdMeaning != "" ? zsdMeaning : "等待信号", text_color=zsdSignalColor, text_size=size.normal, bgcolor=color.white)
+    
+    // ===== 次级别分析 =====
+    string xdSignal = ""
+    string xdMeaning = ""
+    color xdSignalColor = color.gray
+    
+    // 次级别力度
+    if pendingXdStrength > 0
+        xdSignal := "力度:" + str.tostring(pendingXdStrength, "#") + "%"
+        if pendingXdStrength > 100
+            xdMeaning := pendingXd.isUp ? "反弹强劲" : "下跌强劲"
+            xdSignalColor := pendingXd.isUp ? color.green : color.red
+        else if pendingXdStrength >= 70
+            xdMeaning := pendingXd.isUp ? "反弹正常" : "回调正常"
+            xdSignalColor := color.orange
+        else if pendingXdStrength >= 50
+            xdMeaning := pendingXd.isUp ? "反弹减弱" : "回调减弱"
+            xdSignalColor := color.orange
+        else
+            xdMeaning := pendingXd.isUp ? "反弹无力,可能是诱多" : "回调无力,可能是诱空"
+            xdSignalColor := pendingXd.isUp ? color.maroon : color.teal
+    
+    // 次级别买卖点
+    string xdBspText = ""
+    for bsp in allBSP
+        if bsp.level == "xd" and bsp.barIdx >= bar_index - 30
+            string bspType = str.tostring(bsp.bspType) + (bsp.isBuy ? "买" : "卖")
+            xdBspText := xdBspText + bspType + " "
+    if xdBspText != ""
+        xdSignal := xdSignal + (xdSignal != "" ? "\n" : "") + xdBspText
+    
+    table.cell(infoPanel, 0, 2, "次级别", text_color=color.white, text_size=size.large, bgcolor=color.purple)
+    table.cell(infoPanel, 1, 2, xdSignal != "" ? xdSignal : "无信号", text_color=xdSignalColor, text_size=size.normal, bgcolor=color.white)
+    table.cell(infoPanel, 2, 2, xdMeaning != "" ? xdMeaning : "等待信号", text_color=xdSignalColor, text_size=size.normal, bgcolor=color.white)
+    
+    // ===== 笔级别分析 =====
+    string biSignal = ""
+    string biMeaning = ""
+    color biColor = color.gray
+    
+    // 笔级别力度和背驰
+    if pendingBiStrength > 0
+        biSignal := "力度:" + str.tostring(pendingBiStrength, "#") + "%"
+    
+    // 检测笔级别背驰
+    if not na(pendingBi) and array.size(bis) >= 2
+        Bi lastBi = array.get(bis, array.size(bis) - 1)
+        float lastBiRange = math.abs(lastBi.endPrice - lastBi.startPrice)
+        float pendingRange = math.abs(pendingBi.endPrice - pendingBi.startPrice)
+        if lastBiRange > 0
+            float ratio = pendingRange / lastBiRange
+            if ratio < bcThreshold
+                float bcStrength = (1 - ratio) * 100
+                biSignal := biSignal + (biSignal != "" ? "\n" : "") + (pendingBi.isUp ? "顶背驰" : "底背驰") + str.tostring(bcStrength, "#") + "%"
+                if pendingBi.isUp
+                    biMeaning := "短期见顶风险"
+                    biColor := color.maroon
+                else
+                    biMeaning := "短期见底机会"
+                    biColor := color.teal
+            else
+                if pendingBiStrength > 100
+                    biMeaning := pendingBi.isUp ? "短期强势" : "短期弱势"
+                    biColor := pendingBi.isUp ? color.green : color.red
+                else
+                    biMeaning := "短期震荡"
+                    biColor := color.orange
+    
+    table.cell(infoPanel, 0, 3, "笔级别", text_color=color.white, text_size=size.large, bgcolor=color.blue)
+    table.cell(infoPanel, 1, 3, biSignal != "" ? biSignal : "无信号", text_color=biColor, text_size=size.normal, bgcolor=color.white)
+    table.cell(infoPanel, 2, 3, biMeaning != "" ? biMeaning : "等待信号", text_color=biColor, text_size=size.normal, bgcolor=color.white)
+    
+    // ===== 综合判断 =====
+    string overallSignal = ""
+    string overallMeaning = ""
+    color overallColor = color.gray
+    
+    // 综合分析逻辑
+    bool zsdBullish = pendingZsdStrength > 70 and (na(pendingZsd) ? true : pendingZsd.isUp)
+    bool zsdBearish = pendingZsdStrength > 70 and (na(pendingZsd) ? false : not pendingZsd.isUp)
+    bool zsdWeakUp = pendingZsdStrength > 0 and pendingZsdStrength < 50 and (na(pendingZsd) ? false : pendingZsd.isUp)
+    bool zsdWeakDown = pendingZsdStrength > 0 and pendingZsdStrength < 50 and (na(pendingZsd) ? false : not pendingZsd.isUp)
+    
+    bool biTopBC = not na(pendingBi) and pendingBi.isUp and pendingBiStrength < 70
+    bool biBotBC = not na(pendingBi) and not pendingBi.isUp and pendingBiStrength < 70
+    
+    // 判断综合信号
+    if zsdWeakUp and biTopBC
+        overallSignal := "⚠️ 做空信号"
+        overallMeaning := "本级别上涨背驰+笔顶背驰"
+        overallColor := color.maroon
+    else if zsdWeakDown and biBotBC
+        overallSignal := "✅ 做多信号"
+        overallMeaning := "本级别下跌背驰+笔底背驰"
+        overallColor := color.teal
+    else if zsdBearish and biTopBC
+        overallSignal := "📉 继续看空"
+        overallMeaning := "大趋势向下,反弹结束"
+        overallColor := color.maroon
+    else if zsdBullish and biBotBC
+        overallSignal := "📈 继续看多"
+        overallMeaning := "大趋势向上,回调结束"
+        overallColor := color.teal
+    else if zsdWeakUp
+        overallSignal := "⚠️ 谨慎做多"
+        overallMeaning := "上涨力度弱,注意风险"
+        overallColor := color.orange
+    else if zsdWeakDown
+        overallSignal := "⚠️ 谨慎做空"
+        overallMeaning := "下跌力度弱,关注反弹"
+        overallColor := color.orange
+    else if zsdBullish
+        overallSignal := "📈 多头趋势"
+        overallMeaning := "等回调后做多"
+        overallColor := color.teal
+    else if zsdBearish
+        overallSignal := "📉 空头趋势"
+        overallMeaning := "等反弹后做空"
+        overallColor := color.maroon
+    else
+        overallSignal := "⏸️ 观望"
+        overallMeaning := "等待明确信号"
+        overallColor := color.gray
+    
+    table.cell(infoPanel, 0, 4, "综合", text_color=color.white, text_size=size.large, bgcolor=overallColor)
+    table.cell(infoPanel, 1, 4, overallSignal, text_color=overallColor, text_size=size.large, bgcolor=color.white)
+    table.cell(infoPanel, 2, 4, overallMeaning, text_color=overallColor, text_size=size.normal, bgcolor=color.white)
+    
+    // ===== 操作建议 =====
+    string actionText = ""
+    string riskText = ""
+    color actionColor = color.gray
+    
+    if overallSignal == "⚠️ 做空信号" or overallSignal == "📉 继续看空"
+        actionText := "可以做空"
+        riskText := "止损:前高上方" + str.tostring(zsdStopLossPct, "#.#") + "%"
+        actionColor := color.maroon
+    else if overallSignal == "✅ 做多信号" or overallSignal == "📈 继续看多"
+        actionText := "可以做多"
+        riskText := "止损:前低下方" + str.tostring(zsdStopLossPct, "#.#") + "%"
+        actionColor := color.teal
+    else if overallSignal == "⚠️ 谨慎做多" or overallSignal == "⚠️ 谨慎做空"
+        actionText := "轻仓试探"
+        riskText := "严格止损,快进快出"
+        actionColor := color.orange
+    else
+        actionText := "暂不操作"
+        riskText := "等待信号明确"
+        actionColor := color.gray
+    
+    table.cell(infoPanel, 0, 5, "操作", text_color=color.white, text_size=size.large, bgcolor=actionColor)
+    table.cell(infoPanel, 1, 5, actionText, text_color=actionColor, text_size=size.large, bgcolor=color.white)
+    table.cell(infoPanel, 2, 5, riskText, text_color=actionColor, text_size=size.normal, bgcolor=color.white)
+    
+    // ===== 统计信息 =====
+    table.cell(infoPanel, 0, 6, "统计", text_color=color.black, text_size=size.normal, bgcolor=color.new(color.gray, 70))
+    table.cell(infoPanel, 1, 6, "笔:" + str.tostring(array.size(bis)) + " 段:" + str.tostring(array.size(xds)), text_color=color.black, text_size=size.small, bgcolor=color.white)
+    table.cell(infoPanel, 2, 6, "买卖点:" + str.tostring(array.size(allBSP)) + " 背驰:" + str.tostring(array.size(allBC)), text_color=color.black, text_size=size.small, bgcolor=color.white)
+    
+    // ===== 版本信息 =====
+    table.cell(infoPanel, 0, 7, "V7.13", text_color=color.gray, text_size=size.small, bgcolor=color.white)
+    table.cell(infoPanel, 1, 7, "严格分型版", text_color=color.gray, text_size=size.small, bgcolor=color.white)
+    table.cell(infoPanel, 2, 7, syminfo.ticker, text_color=color.gray, text_size=size.small, bgcolor=color.white)
+
+// ============ 13. 警报系统 ============
+// 每个bar重新计算,不使用var保持状态
+bool alertZsdBSPTriggered = false
+bool alertXdBSPTriggered = false
+bool alertBiBSPTriggered = false
+bool alertZsdPotentialTriggered = false
+bool alertXdPotentialTriggered = false
+bool alertBiPotentialTriggered = false
+bool alertZsdBCTriggered = false
+bool alertXdBCTriggered = false
+bool alertBiBCTriggered = false
+string alertMsg = ""
+
+if barstate.islast and showMaster
+    // 买卖点警报 - 添加安全检查
+    int bspSize = array.size(allBSP)
+    if bspSize > 0
+        for i = 0 to bspSize - 1
+            BuySellPoint bsp = array.get(allBSP, i)
+            if not na(bsp) and not na(bsp.barIdx) and bsp.barIdx >= bar_index - 2
+                string typeName = bsp.bspType == 1 ? "1" : (bsp.bspType == 2 ? "2" : "3")
+                string direction = bsp.isBuy ? "买" : "卖"
+                if bsp.level == "zsd" and alertZsdBSP
+                    alertZsdBSPTriggered := true
+                    alertMsg := "🔔 本级别 " + typeName + direction
+                else if bsp.level == "xd" and alertXdBSP
+                    alertXdBSPTriggered := true
+                    alertMsg := "🔔 次级别 " + typeName + direction
+                else if bsp.level == "bi" and alertBiBSP
+                    alertBiBSPTriggered := true
+                    alertMsg := "🔔 笔级别 " + typeName + direction
+    
+    // 潜在买卖点警报 - 添加安全检查
+    int pbspSize = array.size(potentialBSPs)
+    if pbspSize > 0
+        for i = 0 to pbspSize - 1
+            PotentialBSP pbsp = array.get(potentialBSPs, i)
+            if not na(pbsp) and not na(pbsp.strength) and pbsp.strength >= alertPotentialThreshold
+                string direction = pbsp.isBuy ? "潜在买点" : "潜在卖点"
+                string strengthStr = str.tostring(pbsp.strength, "#") + "%"
+                string reasonStr = na(pbsp.reason) ? "" : pbsp.reason
+                if pbsp.level == "zsd" and alertZsdPotential
+                    alertZsdPotentialTriggered := true
+                    alertMsg := "⚡ 本级别 " + direction + " | " + reasonStr + " | " + strengthStr
+                else if pbsp.level == "xd" and alertXdPotential
+                    alertXdPotentialTriggered := true
+                    alertMsg := "⚡ 次级别 " + direction + " | " + reasonStr + " | " + strengthStr
+                else if pbsp.level == "bi" and alertBiPotential
+                    alertBiPotentialTriggered := true
+                    alertMsg := "⚡ 笔级别 " + direction + " | " + reasonStr + " | " + strengthStr
+    
+    // 背驰警报 - 添加安全检查
+    int bcSize = array.size(allBC)
+    if bcSize > 0
+        for i = 0 to bcSize - 1
+            Beichi bc = array.get(allBC, i)
+            if not na(bc) and not na(bc.barIdx) and not na(bc.strength)
+                if bc.barIdx >= bar_index - 3 and bc.strength >= alertBCThreshold
+                    string direction = bc.isBuy ? "底" : "顶"
+                    string strengthStr = str.tostring(bc.strength, "#") + "%"
+                    string bcTypeStr = na(bc.bcType) ? "背驰" : bc.bcType
+                    if bc.level == "zsd" and alertZsdBC
+                        alertZsdBCTriggered := true
+                        alertMsg := "⚠️ 本级别 " + direction + bcTypeStr + " | " + strengthStr
+                    else if bc.level == "xd" and alertXdBC
+                        alertXdBCTriggered := true
+                        alertMsg := "⚠️ 次级别 " + direction + bcTypeStr + " | " + strengthStr
+                    else if bc.level == "bi" and alertBiBC
+                        alertBiBCTriggered := true
+                        alertMsg := "⚠️ 笔级别 " + direction + bcTypeStr + " | " + strengthStr
+
+bool anyZsdAlert = alertZsdBSPTriggered or alertZsdPotentialTriggered or alertZsdBCTriggered
+bool anyXdAlert = alertXdBSPTriggered or alertXdPotentialTriggered or alertXdBCTriggered
+bool anyBiAlert = alertBiBSPTriggered or alertBiPotentialTriggered or alertBiBCTriggered
+bool anyAlert = anyZsdAlert or anyXdAlert or anyBiAlert
+
+if barstate.islast and anyAlert and alertMsg != ""
+    alert(alertMsg, alert.freq_once_per_bar)
+
+// ============ 14. 警报条件 ============
+alertcondition(alertZsdBSPTriggered, title="本级别-买卖点", message="本级别买卖点信号")
+alertcondition(alertZsdPotentialTriggered, title="本级别-潜在买卖点", message="本级别潜在买卖点")
+alertcondition(alertZsdBCTriggered, title="本级别-背驰", message="本级别背驰信号")
+alertcondition(anyZsdAlert, title="本级别-任意信号", message="本级别任意信号")
+alertcondition(alertXdBSPTriggered, title="次级别-买卖点", message="次级别买卖点信号")
+alertcondition(alertXdPotentialTriggered, title="次级别-潜在买卖点", message="次级别潜在买卖点")
+alertcondition(alertXdBCTriggered, title="次级别-背驰", message="次级别背驰信号")
+alertcondition(anyXdAlert, title="次级别-任意信号", message="次级别任意信号")
+alertcondition(alertBiBSPTriggered, title="笔级别-买卖点", message="笔级别买卖点信号")
+alertcondition(alertBiPotentialTriggered, title="笔级别-潜在买卖点", message="笔级别潜在买卖点")
+alertcondition(alertBiBCTriggered, title="笔级别-背驰", message="笔级别背驰信号")
+alertcondition(anyBiAlert, title="笔级别-任意信号", message="笔级别任意信号")
+alertcondition(anyAlert, title="任意缠论信号", message="缠论信号触发")
