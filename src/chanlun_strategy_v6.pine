@@ -125,24 +125,33 @@ var array<label>        divLabels     = array.new<label>()
 [macdLine, signalLine, histLine] = ta.macd(close, i_macdFast, i_macdSlow, i_macdSignal)
 
 // ============================================================================
+// HELPER: CUMULATIVE MACD AREA (called every bar for consistency)
+// ============================================================================
+
+// Running cumulative sum of absolute MACD histogram — called on EVERY bar
+// To get the area between bar A and bar B: cumMacdArea[0] at bar B minus value at bar A
+var float cumMacdArea = 0.0
+cumMacdArea += math.abs(nz(histLine))
+
+// Store cumulative area per bar in an array so we can look up by bar_index
+var array<float> cumMacdArr = array.new<float>()
+array.push(cumMacdArr, cumMacdArea)
+
+// Retrieve MACD area between two bar indices using the cumulative array
+getMacdArea(int fromBar, int toBar) =>
+    float area = 0.0
+    int sz = array.size(cumMacdArr)
+    if fromBar >= 0 and toBar >= 0 and fromBar < sz and toBar < sz
+        area := math.abs(array.get(cumMacdArr, toBar) - array.get(cumMacdArr, fromBar))
+    area
+
+// ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
 
 // Check if bar is within processing range
 isInRange() =>
     bar_index >= (last_bar_index - i_maxCandles)
-
-// Calculate MACD area between two bar indices (sum of absolute histogram values)
-calcMacdArea(int fromBar, int toBar) =>
-    float area = 0.0
-    int lookback = bar_index - fromBar
-    int count = toBar - fromBar
-    if lookback >= 0 and count > 0
-        for i = 0 to count
-            int idx = lookback - i
-            if idx >= 0
-                area += math.abs(nz(histLine[idx]))
-    area
 
 // ============================================================================
 // MODULE 1: K-LINE MERGING (包含处理)
@@ -214,15 +223,19 @@ if isInRange()
             mc_barIdx   := bar_index
             mc_startIdx := bar_index
 
+// Track merged candle direction for bar coloring (must be set every bar for barcolor)
+var int mc_colorDir = 0
+mc_colorDir := 0
+
 // Store merged candle when ready
 if newMC_ready
     mc = MergedCandle.new(newMC_hi, newMC_lo, newMC_barIdx, newMC_start, newMC_end, newMC_dir)
     array.push(mergedCandles, mc)
+    mc_colorDir := newMC_dir
 
-    // Optional: color merged candle bars
-    if i_showMerged
-        barcolor(newMC_dir > 0 ? color.new(color.lime, 60) : color.new(color.fuchsia, 60),
-                 offset = bar_index - newMC_barIdx)
+// Optional: color bars when a merged candle is finalized (colors the current bar)
+barcolor(i_showMerged and mc_colorDir > 0 ? color.new(color.lime, 60) :
+         i_showMerged and mc_colorDir < 0 ? color.new(color.fuchsia, 60) : na)
 
 // ============================================================================
 // MODULE 2: FRACTAL DETECTION (分型识别)
@@ -353,7 +366,7 @@ if newFractal_ready
                     // Down stroke confirmed: top -> bottom
                     int fromBar = bi_lastTopBar
                     int toBar   = fbar
-                    float mArea = calcMacdArea(fromBar, toBar)
+                    float mArea = getMacdArea(fromBar, toBar)
 
                     // Record the top point if it's a new bi start
                     if bi_count == 0 or bi_lastDir != 1
@@ -385,7 +398,7 @@ if newFractal_ready
                     // Up stroke confirmed: bottom -> top
                     int fromBar = bi_lastBotBar
                     int toBar   = fbar
-                    float mArea = calcMacdArea(fromBar, toBar)
+                    float mArea = getMacdArea(fromBar, toBar)
 
                     if bi_count == 0 or bi_lastDir != -1
                         botPt = BiPoint.new(-1, bi_lastBotLo, bi_lastBotHi, bi_lastBotLo, bi_lastBotBar, 0.0)
@@ -559,7 +572,7 @@ if newBi_ready and array.size(biPoints) >= 4
                 // Calculate MACD areas
                 BiPoint prevPrev = array.get(biPoints, bsz - 4)
                 float currArea = curr.macdArea
-                float prevArea = prevSame.macdArea > 0 ? prevSame.macdArea : calcMacdArea(prevPrev.barIdx, prevSame.barIdx)
+                float prevArea = prevSame.macdArea > 0 ? prevSame.macdArea : getMacdArea(prevPrev.barIdx, prevSame.barIdx)
                 if prevArea > 0 and currArea < prevArea * 0.8
                     divergence_detected := true
                     divergence_type     := -1  // bearish
@@ -569,7 +582,7 @@ if newBi_ready and array.size(biPoints) >= 4
             if curr.price < prevSame.price
                 BiPoint prevPrev = array.get(biPoints, bsz - 4)
                 float currArea = curr.macdArea
-                float prevArea = prevSame.macdArea > 0 ? prevSame.macdArea : calcMacdArea(prevPrev.barIdx, prevSame.barIdx)
+                float prevArea = prevSame.macdArea > 0 ? prevSame.macdArea : getMacdArea(prevPrev.barIdx, prevSame.barIdx)
                 if prevArea > 0 and currArea < prevArea * 0.8
                     divergence_detected := true
                     divergence_type     := 1   // bullish
