@@ -175,8 +175,8 @@ var int    newMC_dir     = 0
 newMC_ready = false
 
 if isInRange()
-    curHi = high
-    curLo = low
+    float curHi = high
+    float curLo = low
 
     if na(mc_hi)
         // First candle
@@ -229,7 +229,7 @@ mc_colorDir := 0
 
 // Store merged candle when ready
 if newMC_ready
-    mc = MergedCandle.new(newMC_hi, newMC_lo, newMC_barIdx, newMC_start, newMC_end, newMC_dir)
+    MergedCandle mc = MergedCandle.new(newMC_hi, newMC_lo, newMC_barIdx, newMC_start, newMC_end, newMC_dir)
     array.push(mergedCandles, mc)
     mc_colorDir := newMC_dir
 
@@ -275,17 +275,17 @@ if newMC_ready and array.size(mergedCandles) >= 3
         newFractal_bar   := mc2.barIdx
 
 if newFractal_ready
-    frac = Fractal.new(newFractal_type, newFractal_hi, newFractal_lo, newFractal_bar, true)
+    Fractal frac = Fractal.new(newFractal_type, newFractal_hi, newFractal_lo, newFractal_bar, true)
     array.push(fractals, frac)
 
     // Draw fractal marker
     if i_showFractals
         if newFractal_type == 1
-            lbl = label.new(newFractal_bar, newFractal_hi, "▼",
+            label lbl = label.new(newFractal_bar, newFractal_hi, "▼",
                  style=label.style_none, textcolor=i_colSell, size=size.small)
             array.push(fracLabels, lbl)
         else if newFractal_type == -1
-            lbl = label.new(newFractal_bar, newFractal_lo, "▲",
+            label lbl = label.new(newFractal_bar, newFractal_lo, "▲",
                  style=label.style_none, textcolor=i_colBuy, size=size.small)
             array.push(fracLabels, lbl)
 
@@ -315,10 +315,10 @@ var float  newBi_startPrice = na
 var int    newBi_startBar = na
 
 if newFractal_ready
-    ftype = newFractal_type
-    fhi   = newFractal_hi
-    flo   = newFractal_lo
-    fbar  = newFractal_bar
+    int   ftype = newFractal_type
+    float fhi   = newFractal_hi
+    float flo   = newFractal_lo
+    int   fbar  = newFractal_bar
 
     if not bi_hasFirst
         // Store first fractal as starting point
@@ -370,12 +370,12 @@ if newFractal_ready
 
                     // Record the top point if it's a new bi start
                     if bi_count == 0 or bi_lastDir != 1
-                        topPt = BiPoint.new(1, bi_lastTopHi, bi_lastTopHi, bi_lastTopLo, bi_lastTopBar, 0.0)
+                        BiPoint topPt = BiPoint.new(1, bi_lastTopHi, bi_lastTopHi, bi_lastTopLo, bi_lastTopBar, 0.0)
                         array.push(biPoints, topPt)
                         bi_count += 1
 
                     // Record bottom point
-                    botPt = BiPoint.new(-1, flo, fhi, flo, fbar, mArea)
+                    BiPoint botPt = BiPoint.new(-1, flo, fhi, flo, fbar, mArea)
                     array.push(biPoints, botPt)
                     bi_count += 1
 
@@ -401,11 +401,11 @@ if newFractal_ready
                     float mArea = getMacdArea(fromBar, toBar)
 
                     if bi_count == 0 or bi_lastDir != -1
-                        botPt = BiPoint.new(-1, bi_lastBotLo, bi_lastBotHi, bi_lastBotLo, bi_lastBotBar, 0.0)
+                        BiPoint botPt = BiPoint.new(-1, bi_lastBotLo, bi_lastBotHi, bi_lastBotLo, bi_lastBotBar, 0.0)
                         array.push(biPoints, botPt)
                         bi_count += 1
 
-                    topPt = BiPoint.new(1, fhi, fhi, flo, fbar, mArea)
+                    BiPoint topPt = BiPoint.new(1, fhi, fhi, flo, fbar, mArea)
                     array.push(biPoints, topPt)
                     bi_count += 1
 
@@ -441,8 +441,8 @@ if newFractal_ready
 
 // Draw stroke line
 if newBi_ready and i_showBi
-    lineCol = newBi_dir > 0 ? i_colBiUp : i_colBiDn
-    ln = line.new(newBi_startBar, newBi_startPrice, newBi_bar, newBi_price,
+    color lineCol = newBi_dir > 0 ? i_colBiUp : i_colBiDn
+    line ln = line.new(newBi_startBar, newBi_startPrice, newBi_bar, newBi_price,
          color=lineCol, width=2, style=line.style_solid)
     array.push(biLines, ln)
 
@@ -531,12 +531,12 @@ if newBi_ready and array.size(biPoints) >= 4
             newPivot_break := true
 
             // Save completed pivot
-            pvt = Pivot.new(pvt_ZG, pvt_ZD, pvt_startBar, pvt_endBar, pvt_strokeCount, pvt_dir)
+            Pivot pvt = Pivot.new(pvt_ZG, pvt_ZD, pvt_startBar, pvt_endBar, pvt_strokeCount, pvt_dir)
             array.push(pivots, pvt)
 
             // Draw pivot box
             if i_showPivot
-                bx = box.new(pvt_startBar, pvt_ZG, pvt_endBar, pvt_ZD,
+                box bx = box.new(pvt_startBar, pvt_ZG, pvt_endBar, pvt_ZD,
                      border_color=color.new(color.orange, 50),
                      bgcolor=i_colPivot, border_width=1)
                 array.push(pivotBoxes, bx)
@@ -589,11 +589,11 @@ if newBi_ready and array.size(biPoints) >= 4
 
     // Draw divergence label
     if divergence_detected and i_showDiverg
-        divText = divergence_type == 1 ? "底背驰" : "顶背驰"
-        divCol  = divergence_type == 1 ? i_colBuy : i_colSell
-        yPos    = divergence_type == 1 ? curr.lo : curr.hi
-        divStyle = divergence_type == 1 ? label.style_label_up : label.style_label_down
-        lbl = label.new(curr.barIdx, yPos, divText,
+        string divText = divergence_type == 1 ? "底背驰" : "顶背驰"
+        color  divCol  = divergence_type == 1 ? i_colBuy : i_colSell
+        float  yPos    = divergence_type == 1 ? curr.lo : curr.hi
+        string divStyle = divergence_type == 1 ? label.style_label_up : label.style_label_down
+        label  lbl = label.new(curr.barIdx, yPos, divText,
              style=divStyle, color=color.new(divCol, 70),
              textcolor=divCol, size=size.small)
         array.push(divLabels, lbl)
@@ -629,7 +629,7 @@ if divergence_detected and newBi_ready
         sig_buy1  := true
         sig_price := curr2.lo
         sig_bar   := curr2.barIdx
-        sig = Signal.new(1, sig_price, sig_bar)
+        Signal sig = Signal.new(1, sig_price, sig_bar)
         array.push(signals, sig)
 
     if divergence_type == -1 and curr2.dir == 1
@@ -637,7 +637,7 @@ if divergence_detected and newBi_ready
         sig_sell1 := true
         sig_price := curr2.hi
         sig_bar   := curr2.barIdx
-        sig = Signal.new(-1, sig_price, sig_bar)
+        Signal sig = Signal.new(-1, sig_price, sig_bar)
         array.push(signals, sig)
 
 // --- B2 / S2: First pullback after B1/S1 ---
@@ -653,7 +653,7 @@ if newBi_ready and array.size(signals) >= 1 and array.size(biPoints) >= 2
             sig_buy2  := true
             sig_price := curr3.lo
             sig_bar   := curr3.barIdx
-            sig = Signal.new(2, sig_price, sig_bar)
+            Signal sig = Signal.new(2, sig_price, sig_bar)
             array.push(signals, sig)
 
     // S2: After a S1, the first rally that doesn't make new high
@@ -662,7 +662,7 @@ if newBi_ready and array.size(signals) >= 1 and array.size(biPoints) >= 2
             sig_sell2 := true
             sig_price := curr3.hi
             sig_bar   := curr3.barIdx
-            sig = Signal.new(-2, sig_price, sig_bar)
+            Signal sig = Signal.new(-2, sig_price, sig_bar)
             array.push(signals, sig)
 
 // --- B3 / S3: Pivot breakout pullback ---
@@ -679,7 +679,7 @@ if newPivot_break and newBi_ready and array.size(biPoints) >= 2
                 sig_buy3  := true
                 sig_price := curr4.lo
                 sig_bar   := curr4.barIdx
-                sig = Signal.new(3, sig_price, sig_bar)
+                Signal sig = Signal.new(3, sig_price, sig_bar)
                 array.push(signals, sig)
 
         // S3: After breaking below pivot, rally doesn't re-enter pivot (stays below ZG)
@@ -688,38 +688,38 @@ if newPivot_break and newBi_ready and array.size(biPoints) >= 2
                 sig_sell3 := true
                 sig_price := curr4.hi
                 sig_bar   := curr4.barIdx
-                sig = Signal.new(-3, sig_price, sig_bar)
+                Signal sig = Signal.new(-3, sig_price, sig_bar)
                 array.push(signals, sig)
 
 // --- Draw Buy/Sell Point Labels ---
 if i_showSignals
     if sig_buy1
-        lbl = label.new(sig_bar, sig_price, "B1\n一买",
+        label lbl = label.new(sig_bar, sig_price, "B1\n一买",
              style=label.style_label_up, color=i_colBuy,
              textcolor=color.white, size=size.normal)
         array.push(sigLabels, lbl)
     if sig_buy2
-        lbl = label.new(sig_bar, sig_price, "B2\n二买",
+        label lbl = label.new(sig_bar, sig_price, "B2\n二买",
              style=label.style_label_up, color=color.new(i_colBuy, 30),
              textcolor=color.white, size=size.normal)
         array.push(sigLabels, lbl)
     if sig_buy3
-        lbl = label.new(sig_bar, sig_price, "B3\n三买",
+        label lbl = label.new(sig_bar, sig_price, "B3\n三买",
              style=label.style_label_up, color=color.new(i_colBuy, 50),
              textcolor=color.white, size=size.normal)
         array.push(sigLabels, lbl)
     if sig_sell1
-        lbl = label.new(sig_bar, sig_price, "S1\n一卖",
+        label lbl = label.new(sig_bar, sig_price, "S1\n一卖",
              style=label.style_label_down, color=i_colSell,
              textcolor=color.white, size=size.normal)
         array.push(sigLabels, lbl)
     if sig_sell2
-        lbl = label.new(sig_bar, sig_price, "S2\n二卖",
+        label lbl = label.new(sig_bar, sig_price, "S2\n二卖",
              style=label.style_label_down, color=color.new(i_colSell, 30),
              textcolor=color.white, size=size.normal)
         array.push(sigLabels, lbl)
     if sig_sell3
-        lbl = label.new(sig_bar, sig_price, "S3\n三卖",
+        label lbl = label.new(sig_bar, sig_price, "S3\n三卖",
              style=label.style_label_down, color=color.new(i_colSell, 50),
              textcolor=color.white, size=size.normal)
         array.push(sigLabels, lbl)
@@ -820,10 +820,17 @@ if barstate.islast
 // ALERTS
 // ============================================================================
 
-alertcondition(sig_buy1, title="B1 一买", message="缠论第一类买点 / Chanlun 1st Buy Point")
-alertcondition(sig_buy2, title="B2 二买", message="缠论第二类买点 / Chanlun 2nd Buy Point")
-alertcondition(sig_buy3, title="B3 三买", message="缠论第三类买点 / Chanlun 3rd Buy Point")
-alertcondition(sig_sell1, title="S1 一卖", message="缠论第一类卖点 / Chanlun 1st Sell Point")
-alertcondition(sig_sell2, title="S2 二卖", message="缠论第二类卖点 / Chanlun 2nd Sell Point")
-alertcondition(sig_sell3, title="S3 三卖", message="缠论第三类卖点 / Chanlun 3rd Sell Point")
-alertcondition(divergence_detected, title="背驰 Divergence", message="缠论背驰信号 / Chanlun Divergence Detected")
+if sig_buy1
+    alert("B1 一买: 缠论第一类买点 / Chanlun 1st Buy Point", alert.freq_once_per_bar)
+if sig_buy2
+    alert("B2 二买: 缠论第二类买点 / Chanlun 2nd Buy Point", alert.freq_once_per_bar)
+if sig_buy3
+    alert("B3 三买: 缠论第三类买点 / Chanlun 3rd Buy Point", alert.freq_once_per_bar)
+if sig_sell1
+    alert("S1 一卖: 缠论第一类卖点 / Chanlun 1st Sell Point", alert.freq_once_per_bar)
+if sig_sell2
+    alert("S2 二卖: 缠论第二类卖点 / Chanlun 2nd Sell Point", alert.freq_once_per_bar)
+if sig_sell3
+    alert("S3 三卖: 缠论第三类卖点 / Chanlun 3rd Sell Point", alert.freq_once_per_bar)
+if divergence_detected
+    alert("背驰 Divergence: 缠论背驰信号 / Chanlun Divergence Detected", alert.freq_once_per_bar)
